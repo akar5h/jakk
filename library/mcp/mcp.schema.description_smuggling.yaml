@@ -1,0 +1,23 @@
+id: mcp.schema.description_smuggling
+surface: tool_list
+side_effect: safe  # tools/list call only; no tool invocation
+description: |
+  Tool-poisoning via schema description (Invariant Labs writeup). The
+  server discloses tools whose descriptions contain hidden directives
+  steering the model ("you are now...", "ignore previous instructions...",
+  "<SYSTEM>", "new instructions:"). Fires from `tools/list` alone — no
+  tool invocation needed. Highest-leverage probe: one network call,
+  zero side effects.
+owasp: [MCP01, MCP03]
+atlas: [AML.T0051]
+severity: high
+expected_signal: schema.tool_poisoning
+
+applies_to:
+  none: true
+
+payload:
+  arguments: {}
+
+matcher:
+  kind: schema_field

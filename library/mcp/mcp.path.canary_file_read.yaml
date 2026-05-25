@@ -1,0 +1,45 @@
+id: mcp.path.canary_file_read
+surface: tool_call
+side_effect: unsafe  # reads a file outside intended scope; exfiltration intent
+description: |
+  Impact-tier follow-up to `mcp.path.prefix_bypass`. Where prefix_bypass
+  proves the `startswith`-style check can be tricked into accepting a
+  sibling directory (CVE-2025-53110 shape), this probe completes the
+  chain by reading a canary FILE inside that directory and asserting the
+  contents flow back through the response.
+
+  The default canary path targets the breach-to-fix ch02 layout
+  (`/app/files/safe_files_sensitive/secret.txt`, containing
+  `FLAG{cve_2025_53110_escape_route}`). For other servers, override the
+  path via the payload arg and add a server-specific pattern to
+  `matcher.params.patterns`.
+
+  NOTE: `applies_to.tool_name_regex` deliberately excludes pure
+  directory-listing tools (`list_directory_contents`, `list_dir`). Those
+  fire on `mcp.path.prefix_bypass` already; this probe targets only
+  file-content reads where a successful response proves exfiltration,
+  not just bypass.
+owasp: [MCP04, MCP02]
+atlas: [AML.T0024]
+severity: critical
+expected_signal: input.path_traversal
+
+applies_to:
+  # Narrow to file-content read tools by name, then pick the path-shaped
+  # arg via target_arg_kind so multi-arg signatures (e.g. GitHub's
+  # get_file_contents(owner, repo, path, ref)) get probed correctly rather
+  # than dropping the payload into the wrong field.
+  tool_name_regex: "(?i)^(read_file|get_file|cat_file|file_contents|read_file_contents|fetch_file)"
+  target_arg_kind: path
+  min_string_args: 1
+
+payload:
+  arguments:
+    __target_arg__: "/app/files/safe_files_sensitive/secret.txt"
+
+matcher:
+  kind: secret_pattern
+  # secret_pattern's defaults already match FLAG{...} and /etc/passwd lines;
+  # add server-specific canaries here when adapting to other targets.
+  params:
+    patterns: []

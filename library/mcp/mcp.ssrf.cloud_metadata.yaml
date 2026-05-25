@@ -1,0 +1,61 @@
+id: mcp.ssrf.cloud_metadata
+surface: tool_call
+side_effect: safe  # a single read-only GET to a metadata URL; no state change
+description: |
+  Server-Side Request Forgery (SSRF) probe targeting the cloud instance
+  metadata endpoint. Sends a URL-shaped tool argument pointing at the
+  link-local metadata address (169.254.169.254) and checks whether the
+  server fetched it and returned the body.
+
+  If the server is running in a cloud (AWS/GCP/Azure) and naively fetches
+  whatever URL it's given, the response will contain the instance's IAM
+  role credentials — temporary AWS keys, GCP OAuth tokens, etc. Those
+  credentials grant the attacker the instance's cloud permissions: a full
+  account pivot from a single tool call.
+
+  Targets AWS IMDSv1 by default (the most reachable: a plain GET, no
+  special request headers needed). GCP and Azure metadata require headers
+  a naive URL-fetch usually won't add, so they're less reachable via
+  pure-URL SSRF — but the `cloud_metadata` matcher detects their response
+  shapes too, in case a server proxies headers through.
+
+  Real-world prevalence: BlueRock scanned 7,000+ MCP servers (2026) and
+  found 36.7% vulnerable to SSRF, with live retrieval of AWS IAM access
+  keys via exactly this endpoint.
+
+  Fires only on tools that expose a URL-shaped argument (fetch, webhook,
+  import-from-url, render-image, etc.) via target_arg_kind: url. Skipped
+  cleanly on servers with no such tool.
+owasp: [MCP04]  # insufficient input sanitisation (SSRF is the canonical case)
+atlas: [AML.T0024]
+severity: critical  # cloud credential theft → account pivot
+expected_signal: ssrf.cloud_metadata
+
+applies_to:
+  # Any tool with a URL-shaped argument. tool_name_regex narrows the pool;
+  # target_arg_kind: url picks the URL arg out of the signature regardless
+  # of what the server names it (url / uri / endpoint / webhook_url / link).
+  tool_name_regex: "(?i)(fetch|url|http|request|webhook|import|render|preview|proxy|download|screenshot|scrape|crawl)"
+  target_arg_kind: url
+  min_string_args: 1
+
+payload:
+  # AWS IMDSv1 IAM security-credentials listing. A naive fetch of this URL
+  # from inside an EC2 instance returns the role name; appending the role
+  # returns its temporary credentials. We hit the listing path because it
+  # works without knowing the role name in advance, and the matcher also
+  # catches the fuller creds document if the server follows through.
+  #
+  # To adapt for a known role or a mock/test endpoint, copy this file and
+  # change the URL (e.g. point at your own canary metadata server).
+  arguments:
+    __target_arg__: "http://169.254.169.254/latest/meta-data/iam/security-credentials/"
+
+matcher:
+  kind: cloud_metadata
+  # Detects AWS IMDS (AccessKeyId/SecretAccessKey/ASIA.../Code:Success),
+  # GCP (ya29. tokens, Metadata-Flavor), Azure (access_token+client_id,
+  # subscriptionId). Add `patterns: [...]` for bespoke internal metadata
+  # services.
+  params:
+    patterns: []

@@ -1,0 +1,8 @@
+services:
+  playwright-mcp:
+    build: .
+    init: true
+    ports:
+      - "8770:8765"
+    # The container can navigate to any host the Docker network can reach.
+    # That is intentional — SSRF surface is the point of running this target.

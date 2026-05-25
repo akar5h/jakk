@@ -1,0 +1,84 @@
+# External MCP scan targets — registry consumed by jakk-style scanners.
+#
+# Schema (version 1):
+#   name              dotted identifier, stable across runs
+#   kind              "docker-compose" | "command" (only docker-compose used today)
+#   compose_file      path relative to this file
+#   service           service name within the compose file
+#   transport         "streamable-http" | "stdio" | "sse"
+#   endpoint          URL to attach the MCP client to (for HTTP transports)
+#   expected_classes  jakk attack-class IDs expected to fire; [] = negative control
+#   notes             one-line context
+#
+# Endpoints all use the host-side published port. Bring a target up with:
+#   docker compose -f <compose_file> up -d <service>
+# Tear it down with:
+#   docker compose -f <compose_file> down <service>
+
+version: 1
+
+targets:
+  - name: breach-to-fix.git-command-injection.vulnerable
+    kind: docker-compose
+    compose_file: ./_vendor/mcp-breach-to-fix-labs/docker-compose.yml
+    service: git-command-injection-vulnerable
+    transport: streamable-http
+    endpoint: http://localhost:8008/mcp/stream
+    expected_classes: [input.command_injection]
+    notes: "PawelKozy ch.08 — git CLI wrapper with shell-injection sink (GHSA-3q26-f695-pp76)"
+
+  - name: breach-to-fix.git-command-injection.secure
+    kind: docker-compose
+    compose_file: ./_vendor/mcp-breach-to-fix-labs/docker-compose.yml
+    service: git-command-injection-secure
+    transport: streamable-http
+    endpoint: http://localhost:9008/mcp/stream
+    expected_classes: []
+    notes: "PawelKozy ch.08 patched variant — negative control for input.command_injection"
+
+  - name: breach-to-fix.filesystem-prefix.vulnerable
+    kind: docker-compose
+    compose_file: ./_vendor/mcp-breach-to-fix-labs/docker-compose.yml
+    service: filesystem-bypass-prefix-vulnerable
+    transport: streamable-http
+    endpoint: http://localhost:8002/mcp/stream
+    expected_classes: [input.path_traversal]
+    notes: "PawelKozy ch.02 — CVE-2025-53110 startswith anti-pattern (same shape as team-kb-mcp export_page_markdown)"
+
+  - name: breach-to-fix.filesystem-prefix.secure
+    kind: docker-compose
+    compose_file: ./_vendor/mcp-breach-to-fix-labs/docker-compose.yml
+    service: filesystem-bypass-prefix-secure
+    transport: streamable-http
+    endpoint: http://localhost:9002/mcp/stream
+    expected_classes: []
+    notes: "PawelKozy ch.02 patched variant — negative control for input.path_traversal"
+
+  - name: breach-to-fix.whatsapp-rug.helper
+    kind: docker-compose
+    compose_file: ./_vendor/mcp-breach-to-fix-labs/docker-compose.yml
+    service: whatsapp-rug-helper
+    transport: streamable-http
+    endpoint: http://localhost:8003/mcp/stream
+    expected_classes: [description.smuggling]
+    notes: "PawelKozy ch.03 — facts-mcp helper carrying hidden instructions in tool responses (rug-pull)"
+
+  - name: breach-to-fix.whatsapp-rug.vulnerable
+    kind: docker-compose
+    compose_file: ./_vendor/mcp-breach-to-fix-labs/docker-compose.yml
+    service: whatsapp-rug-whatsapp-vulnerable
+    transport: streamable-http
+    endpoint: http://localhost:8004/mcp/stream
+    expected_classes: [response.directive_passthrough]
+    notes: "PawelKozy ch.03 — trusted whatsapp-mcp that obeys directives smuggled via helper response"
+
+  - name: playwright-mcp
+    kind: docker-compose
+    compose_file: ./playwright-mcp/docker-compose.yml
+    service: playwright-mcp
+    transport: streamable-http
+    endpoint: http://localhost:8770/mcp
+    expected_classes:
+      - input.ssrf            # gap class — not in jakk v0.1 catalog yet; reading list flags as the obvious next add
+      - response.directive_passthrough
+    notes: "microsoft/playwright-mcp via npx in a slim Node container; browser_navigate is SSRF surface, browser_console_messages is directive-passthrough surface"

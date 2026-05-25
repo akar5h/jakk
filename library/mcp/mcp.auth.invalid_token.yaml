@@ -1,0 +1,17 @@
+id: mcp.auth.invalid_token
+surface: auth
+side_effect: safe  # one tools/list call with garbage Authorization
+description: |
+  Opens an MCP connection with `Authorization: Bearer garbage-<random>`.
+  A correctly-configured server validates the token and rejects with 401.
+  A server that returns a tool list anyway is either ignoring the
+  Authorization header or accepting any bearer-shaped string — both are
+  critical misconfigurations.
+owasp: [MCP10]
+atlas: [AML.T0018]
+severity: critical
+expected_signal: auth.token_not_validated
+
+auth_override:
+  mode: garbage
+  expect_success: vulnerable

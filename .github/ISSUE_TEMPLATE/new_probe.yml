@@ -1,0 +1,31 @@
+name: New probe proposal
+description: Propose (or contribute) a new probe for the library
+labels: [probe]
+body:
+  - type: input
+    id: id
+    attributes: { label: Proposed probe id, placeholder: "mcp.<surface>.<name>" }
+    validations: { required: true }
+  - type: textarea
+    id: threat
+    attributes:
+      label: Threat model
+      description: What does "vulnerable" mean for this probe, and who is harmed? (vulnerable to what, harmful to whom)
+    validations: { required: true }
+  - type: textarea
+    id: mechanism
+    attributes:
+      label: How it fires + how it's detected
+      description: The payload, the target arg/role, and the matcher logic. Link prior art / a CVE / a writeup if it's a known class.
+    validations: { required: true }
+  - type: dropdown
+    id: side_effect
+    attributes:
+      label: Side effect
+      options: ["safe (read-only)", "unsafe (may mutate)"]
+    validations: { required: true }
+  - type: textarea
+    id: fp
+    attributes:
+      label: False-positive risk
+      description: When might this fire incorrectly? How does the matcher minimize it?

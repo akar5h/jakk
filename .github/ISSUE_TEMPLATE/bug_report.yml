@@ -1,0 +1,23 @@
+name: Bug report
+description: A functional bug in jakk (not a security vuln — see SECURITY.md)
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What did jakk do, and what did you expect?
+    validations: { required: true }
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: The exact command, the target (lab/version if shareable), and the output.
+      render: shell
+    validations: { required: true }
+  - type: input
+    id: version
+    attributes: { label: jakk version, placeholder: "0.2.0" }
+  - type: input
+    id: python
+    attributes: { label: Python version, placeholder: "3.11" }

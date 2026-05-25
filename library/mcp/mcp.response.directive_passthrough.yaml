@@ -1,0 +1,26 @@
+id: mcp.response.directive_passthrough
+surface: tool_call
+side_effect: safe  # calls a benign-looking read tool with empty arguments
+description: |
+  Call a benign tool and scan the response for model-directed imperatives
+  ("SYSTEM:", "Ignore previous instructions", "You are now ...", etc.).
+  A tool returning prose that *issues instructions to the model* is the
+  hidden-instructions-in-tool-responses pattern from breach-to-fix ch03 —
+  responses are an injection surface even when the input was benign.
+owasp: [MCP03]
+atlas: [AML.T0051]
+severity: high
+expected_signal: response.directive_passthrough
+
+applies_to:
+  # Benign reads only — see notes in mcp.response.secret_overshare.yaml.
+  # `require_no_required_args: true` keeps us off args-required tools
+  # that would isError=True on an empty-arg call.
+  tool_name_regex: "(?i)^(list|get|read|describe|status|info|news|search|fetch|message|messages|notifications)"
+  require_no_required_args: true
+
+payload:
+  arguments: {}
+
+matcher:
+  kind: directive_passthrough

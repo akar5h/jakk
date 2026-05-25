@@ -1,0 +1,47 @@
+id: mcp.authz.cross_tenant_read
+surface: authz
+side_effect: safe  # read-only probe (assumes phase_b is a read tool)
+description: |
+  Confused-deputy / cross-tenant authorization probe. Two identities
+  (A and B) attempt to read the same object. Phase A is a sanity check
+  that A can read its own object; phase B is the actual probe — B
+  attempts to read the same object using B's credential. If B succeeds
+  AND B's response contains content that identifies the object as
+  A's, the server fails to enforce per-tenant authorization.
+
+  This YAML is configured against breach-to-fix ch01 (Asana CRM proxy,
+  `fetch_project(project_id, api_key)`). The credential is a tool-arg
+  api_key (NOT an HTTP bearer), matching how ch01 authenticates. For
+  a server using HTTP-bearer auth, this YAML's `arguments` block would
+  not need the `api_key` field and the operator would use `--bearer`
+  to set it. The two-credential machinery itself is target-agnostic.
+
+  Required CLI flags:
+    --cred-a alpha-api-key
+    --cred-b bravo-api-key
+    --foreign-id CRM-1001   (a tenant_alpha project; bravo should NOT see it)
+
+  Without all three, the probe is skipped (not failed).
+owasp: [MCP08]  # broken object-level authorization (BOLA-equivalent for MCP)
+atlas: [AML.T0024]
+severity: critical
+expected_signal: authz.cross_tenant_read
+
+phase_a:
+  tool: fetch_project
+  arguments:
+    project_id: "{foreign_id}"
+    api_key: "{cred_a}"
+
+phase_b:
+  tool: fetch_project
+  arguments:
+    project_id: "{foreign_id}"
+    api_key: "{cred_b}"
+
+matcher:
+  # tenant_alpha is A's tenant tag. If it appears in B's response,
+  # B successfully read an object belonging to A's tenant.
+  kind: regex
+  params:
+    pattern: '"tenant"\s*:\s*"tenant_alpha"'

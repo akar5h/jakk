@@ -1,0 +1,41 @@
+id: mcp.command.shell_marker
+surface: tool_call
+side_effect: unsafe  # injects shell metacharacters; may create directories or run commands
+description: |
+  Inject a shell command substitution carrying a unique per-run marker
+  into the first string argument of any plausibly-shell-backed tool.
+  If the marker echoes back in the response, the argument is reaching
+  a shell interpreter — i.e. the server is concatenating user input
+  into a `shell=True` (or equivalent) command.
+owasp: [MCP05]
+atlas: [AML.T0051]
+severity: high
+expected_signal: input.command_injection
+
+applies_to:
+  # Tools whose name suggests they shell out: git/repo helpers, exec, run,
+  # init/build/clone/fetch/pull. Permissive on purpose — false positives
+  # are filtered by whether the marker actually echoes.
+  tool_name_regex: "(?i)(git|repo|exec|run|init|build|clone|fetch|pull|shell|cmd)"
+  min_string_args: 1
+
+payload:
+  arguments:
+    __first_string_arg__: "x$(echo JAKK-MARKER-{run_id})"
+
+matcher:
+  kind: marker_echo
+  params:
+    marker_template: "JAKK-MARKER-{run_id}"
+
+# Corroboration: differential + negative canary. Scanner runs 3 calls
+# (real_1, real_2, negative) per matched tool and aggregates into one
+# finding. See docs/jakk/tests/mcp.command.shell_marker.md for the
+# decision table.
+corroborate:
+  # No-metacharacter control payload. If THIS marker reflects, the server
+  # is just echoing raw input and the real markers' reflection is not
+  # evidence of shell expansion.
+  negative_arguments:
+    __first_string_arg__: "xPLAIN-CANARY-{run_id}"
+  negative_marker_template: "PLAIN-CANARY-{run_id}"
