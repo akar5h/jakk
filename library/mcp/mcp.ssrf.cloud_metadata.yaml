@@ -32,10 +32,21 @@ severity: critical  # cloud credential theft → account pivot
 expected_signal: ssrf.cloud_metadata
 
 applies_to:
-  # Any tool with a URL-shaped argument. tool_name_regex narrows the pool;
-  # target_arg_kind: url picks the URL arg out of the signature regardless
-  # of what the server names it (url / uri / endpoint / webhook_url / link).
-  tool_name_regex: "(?i)(fetch|url|http|request|webhook|import|render|preview|proxy|download|screenshot|scrape|crawl)"
+  # ANY tool that exposes a URL-shape arg. ``target_arg_kind: url`` is the
+  # sole selection filter — it picks the URL arg out of the tool signature
+  # regardless of what the server names it (url / uri / endpoint /
+  # webhook_url / link, or one described as "url to …" per ARG_KINDS).
+  #
+  # No ``tool_name_regex`` here, intentionally: the SSRF bug class is
+  # server-side request forgery against whatever URL the operator hands
+  # to a tool — the tool's *name* doesn't have to be url-suggestive.
+  # Restricting by name used to miss unified-query / dispatcher-style
+  # tools (one entrypoint, many actions) that take a URL via a non-URL
+  # tool name. Surfaced while scanning ``utensils/mcp-nixos`` 2026-05-28
+  # (see internal/benchmark/findings/mcp-nixos.md). The matcher
+  # (``cloud_metadata``) is precise — it only fires on actual metadata
+  # response shapes — so widening selection here does not produce false
+  # positives.
   target_arg_kind: url
   min_string_args: 1
 

@@ -80,3 +80,54 @@ def test_require_no_required_args_with_empty_required_list():
     schema = {"properties": {"x": {"type": "string"}}, "required": []}
     t = ToolDescriptor(name="x", description="", input_schema=schema)
     assert matches(AppliesTo(require_no_required_args=True), t)
+
+
+# ---------------------------------------------------------------------------
+# Coverage gap: tool_name_regex is optional; target_arg_kind alone can drive
+# selection (regression for the unified-query / dispatcher-tool gap surfaced
+# while scanning utensils/mcp-nixos on 2026-05-28 — see
+# internal/benchmark/findings/mcp-nixos.md).
+# ---------------------------------------------------------------------------
+
+def test_target_arg_kind_url_without_name_regex_selects_dispatcher_tool():
+    """A dispatcher-style tool whose name is NOT url-suggestive but which
+    exposes a URL-shape arg must still be selected when the probe filters
+    only by arg-kind. This was the SSRF gap: requiring a url-suggestive
+    name regex caused jakk to miss every dispatcher tool in the wild."""
+    a = AppliesTo(target_arg_kind="url", min_string_args=1)
+
+    dispatcher = _tool(
+        "nix",  # arbitrary, intentionally unrelated to fetch/url/http/etc.
+        {"action": {"type": "string"}, "url": {"type": "string"}},
+    )
+    assert matches(a, dispatcher)
+
+
+def test_target_arg_kind_url_without_name_regex_skips_tools_without_url_arg():
+    """Counterpart guard: even with name-regex removed, tools without a
+    URL-shape arg are still rejected — arg-kind selection is precise."""
+    a = AppliesTo(target_arg_kind="url", min_string_args=1)
+
+    no_url = _tool(
+        "nix",
+        {"action": {"type": "string"}, "query": {"type": "string"}},
+    )
+    assert not matches(a, no_url)
+
+
+def test_target_arg_kind_url_uses_description_when_name_unhelpful():
+    """ARG_KINDS for 'url' also matches via description ("url to ...", etc.).
+    Verifies a tool whose arg name doesn't match the URL name-regex but
+    whose description does is still admitted when name regex is absent."""
+    a = AppliesTo(target_arg_kind="url", min_string_args=1)
+
+    t = ToolDescriptor(
+        name="fetch_thing",
+        description="",
+        input_schema={
+            "properties": {
+                "target": {"type": "string", "description": "url to fetch"},
+            },
+        },
+    )
+    assert matches(a, t)
