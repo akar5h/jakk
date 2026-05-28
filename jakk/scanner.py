@@ -8,8 +8,8 @@ from typing import Any, Optional
 from .applies import select_tools
 from .findings import Finding
 from .library import TestCase
-from .matchers import run_matcher
-from .mcp_client import MCPClient, ToolDescriptor
+from .matchers import MatcherResult, run_matcher
+from .mcp_client import CallResult, MCPClient, ToolDescriptor
 
 
 @dataclass
@@ -504,6 +504,51 @@ async def _run_auth_case(case: TestCase, cfg: ScanConfig) -> Finding:
     )
 
 
+# Matchers whose hit can be the server reflecting our own payload back — e.g.
+# echoing the rejected path/id inside an access-denied message — rather than
+# leaking protected data. A hit from one of these INSIDE an error response is
+# reflection-in-a-denial, not a vulnerability.
+_REFLECTION_MATCHERS: frozenset[str] = frozenset({"regex", "substring"})
+
+
+def _resolve_outcome(
+    result: MatcherResult, call: CallResult, matcher_kind: str
+) -> tuple[str, str, Optional[str]]:
+    """Refine a matcher verdict against the transport / tool-error signal.
+
+    Returns ``(outcome, evidence, error_note)``.
+
+    - transport error              -> ``error`` (we couldn't complete the call).
+    - tool error, matcher silent   -> ``pass`` (server RAN and rejected our input
+      safely; keep the server's message so a "rejected safely" pass is
+      distinguishable from a clean-normal-response pass).
+    - tool error, reflection-class matcher fired -> ``echo``. The match lives
+      inside the server's denial, so a regex/substring matcher almost always
+      matched our own payload echoed back (e.g. ``access denied: <path>``) — the
+      server NAMING what it refused, not leaking it. Reporting that as
+      ``vulnerable`` is the cry-wolf bug this guards against.
+    - tool error, content-leak matcher fired -> keep ``vulnerable``. An error
+      that returns a secret (secret_pattern / cloud_metadata) is still a leak.
+    - otherwise                    -> the matcher's own verdict.
+    """
+    outcome = result.outcome
+    evidence = result.evidence
+    error_note: Optional[str] = None
+    if call.transport_error:
+        outcome = "error"
+        error_note = "transport error: tool call did not complete"
+        evidence = evidence or call.text[:200]
+    elif call.is_error:
+        if not result.fired:
+            outcome = "pass"
+            if not evidence:
+                evidence = f"server rejected input (no leak): {call.text[:160]}"
+        elif matcher_kind in _REFLECTION_MATCHERS:
+            outcome = "echo"
+            evidence = f"input reflected in server rejection (not a leak): {evidence}"
+    return outcome, evidence, error_note
+
+
 async def _run_case(
     client: MCPClient,
     case: TestCase,
@@ -594,28 +639,10 @@ async def _run_case(
             call.text,
             {"tools": [t.to_dict() for t in tools]},
         )
-        # Outcome resolution (refined 2026-05-23):
-        #   - matcher fired           -> its verdict (vulnerable / echo)
-        #   - transport_error         -> `error` (we couldn't complete the call,
-        #                                so we genuinely couldn't test)
-        #   - tool-result is_error    -> `pass` (the server RAN and rejected our
-        #                                input safely; the matcher evaluated the
-        #                                error text and found no leak). We keep
-        #                                the server's message in evidence so a
-        #                                "rejected safely" pass is distinguishable
-        #                                from a clean-normal-response pass.
-        #   - otherwise               -> matcher verdict (pass)
-        outcome = result.outcome
-        evidence = result.evidence
-        error_note: Optional[str] = None
-        if call.transport_error:
-            outcome = "error"
-            error_note = "transport error: tool call did not complete"
-            evidence = evidence or call.text[:200]
-        elif call.is_error and not result.fired:
-            outcome = "pass"
-            if not evidence:
-                evidence = f"server rejected input (no leak): {call.text[:160]}"
+        # Outcome resolution (see _resolve_outcome). Refined 2026-05-27 to stop
+        # a reflection-class matcher firing inside a server rejection from
+        # reading as `vulnerable` (the prefix_bypass cry-wolf bug).
+        outcome, evidence, error_note = _resolve_outcome(result, call, case.matcher.kind)
         findings.append(
             Finding(
                 test_id=case.id,

@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import pytest
 
-from jakk.mcp_client import ToolDescriptor
+from jakk.matchers import MatcherResult
+from jakk.mcp_client import CallResult, ToolDescriptor
 from jakk.scanner import (
     _UnresolvedFirstStringArg,
     _UnresolvedTargetArg,
     _UnsatisfiedRequiredArgs,
     _resolve_arguments,
+    _resolve_outcome,
 )
 
 
@@ -186,3 +188,68 @@ def test_no_required_args_no_context_needed():
     tool = _tool({"q": {"type": "string"}}, required=[])
     out = _resolve_arguments({"q": "hello"}, tool, "r1")
     assert out == {"q": "hello"}
+
+
+# ---------------------------------------------------------------------------
+# Outcome resolution — a secure rejection must not read as `vulnerable`
+#
+# Regression: mcp.path.prefix_bypass used a `regex` matcher that fired on the
+# attacked path. A hardened server's access-denied error echoes that path back
+# ("path outside allowed directories: /app/files/safe_files_sensitive"), so the
+# regex matched the DENIAL and the scanner reported `vulnerable` — jakk crying
+# wolf on a server that did the right thing. Found by scanning the real
+# @modelcontextprotocol/server-filesystem (2026-05-27).
+# ---------------------------------------------------------------------------
+
+def test_regex_hit_inside_error_is_downgraded_to_echo():
+    denial = (
+        "Access denied - path outside allowed directories: "
+        "/app/files/safe_files_sensitive not in /srv/root"
+    )
+    result = MatcherResult(True, denial, "vulnerable")
+    outcome, evidence, error_note = _resolve_outcome(
+        result, CallResult(text=denial, is_error=True), "regex"
+    )
+    assert outcome == "echo"  # NOT vulnerable: the path was reflected in a denial
+    assert error_note is None
+    assert "reflect" in evidence.lower()
+
+
+def test_regex_hit_on_success_response_stays_vulnerable():
+    """Regression guard for the true positive: a real bypass returns the
+    protected listing in a SUCCESS response (is_error=False) — keep vulnerable."""
+    listing = "Listing for /app/files/safe_files_sensitive:\nsecret.txt"
+    result = MatcherResult(True, listing, "vulnerable")
+    outcome, _, _ = _resolve_outcome(
+        result, CallResult(text=listing, is_error=False), "regex"
+    )
+    assert outcome == "vulnerable"
+
+
+def test_secret_leak_inside_error_stays_vulnerable():
+    """A content-leak matcher (secret_pattern/cloud_metadata) firing even inside
+    an error is a real leak — an error that returns /etc/passwd is still a leak."""
+    leak = "Operation failed, but: root:x:0:0:root:/root:/bin/bash"
+    result = MatcherResult(True, leak, "vulnerable")
+    outcome, _, _ = _resolve_outcome(
+        result, CallResult(text=leak, is_error=True), "secret_pattern"
+    )
+    assert outcome == "vulnerable"
+
+
+def test_no_hit_inside_error_is_safe_rejection_pass():
+    result = MatcherResult(False, "", "pass")
+    outcome, evidence, _ = _resolve_outcome(
+        result, CallResult(text="Access denied", is_error=True), "secret_pattern"
+    )
+    assert outcome == "pass"
+    assert "rejected input (no leak)" in evidence
+
+
+def test_transport_error_is_error_outcome():
+    result = MatcherResult(False, "", "pass")
+    outcome, _evidence, error_note = _resolve_outcome(
+        result, CallResult(text="boom", transport_error=True), "regex"
+    )
+    assert outcome == "error"
+    assert error_note
