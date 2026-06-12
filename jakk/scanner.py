@@ -216,29 +216,62 @@ async def run_scan(cases: list[TestCase], cfg: ScanConfig) -> list[Finding]:
         findings.append(await _run_authz_case(case, cfg))
 
     if other_cases:
+        client = MCPClient(
+            cfg.endpoint,
+            timeout_s=cfg.timeout_s,
+            bearer=cfg.bearer,
+            headers=cfg.headers,
+        )
         try:
-            async with MCPClient(
-                cfg.endpoint,
-                timeout_s=cfg.timeout_s,
-                bearer=cfg.bearer,
-                headers=cfg.headers,
-            ) as client:
-                try:
-                    tools = await client.list_tools()
-                except Exception as exc:
-                    # Couldn't enumerate the tool surface (auth wall, server
-                    # error). Emit a skip/error PER probe instead of letting the
-                    # exception abort the whole scan — an auth-gated server
-                    # (most commercial ones) would otherwise crash jakk.
-                    outcome, reason = _shared_client_failure(exc)
-                    return findings + _surface_findings(other_cases, cfg, outcome, reason)
-                tools_ctx = [t.to_dict() for t in tools]
-                for case in other_cases:
-                    findings.extend(await _run_case(client, case, tools, tools_ctx, cfg))
+            await client.__aenter__()
         except Exception as exc:
-            # Handshake/connection failed before we could list tools at all.
+            # Handshake/connection failed before we could probe anything.
             outcome, reason = _shared_client_failure(exc)
             findings.extend(_surface_findings(other_cases, cfg, outcome, reason))
+            return findings
+        try:
+            try:
+                tools = await client.list_tools()
+            except Exception as exc:
+                # Couldn't enumerate the tool surface (auth wall, server error).
+                # Emit a skip/error PER probe instead of aborting the whole scan.
+                outcome, reason = _shared_client_failure(exc)
+                findings.extend(_surface_findings(other_cases, cfg, outcome, reason))
+                return findings
+            tools_ctx = [t.to_dict() for t in tools]
+            cases = list(other_cases)
+            reconnects = 0
+            idx = 0
+            while idx < len(cases):
+                case = cases[idx]
+                case_findings = await _run_case(client, case, tools, tools_ctx, cfg)
+                # If the transport dropped mid-scan (server/bridge died, session
+                # lost), the shared client is dead and EVERY remaining probe would
+                # error against it. Reconnect once and retry this probe instead of
+                # silently voiding the rest of the scan. Bounded by _MAX_RECONNECTS
+                # so a server that drops on every call can't loop forever.
+                if _has_transport_drop(case_findings) and reconnects < _MAX_RECONNECTS:
+                    reconnects += 1
+                    client, ok = await _reconnect_client(client, cfg)
+                    if ok:
+                        continue  # retry the same probe on the fresh client
+                    # Reconnect failed — the endpoint is gone. Mark this probe and
+                    # everything after it as error, with a reason, and stop.
+                    findings.extend(
+                        _surface_findings(
+                            cases[idx:], cfg, "error",
+                            "transport dropped mid-scan; reconnect failed — "
+                            "remaining tool-surface probes not run",
+                        )
+                    )
+                    return findings
+                findings.extend(case_findings)
+                idx += 1
+        finally:
+            try:
+                await client.__aexit__(None, None, None)
+            except Exception:
+                pass
     return findings
 
 
@@ -647,6 +680,44 @@ def _surface_findings(
         )
         for c in cases
     ]
+
+
+# Max times the shared tool-surface client may be reconnected within one scan
+# before we give up. Bounds the retry loop so a server that drops on every call
+# can't spin forever; high enough to ride out a transient hiccup or two.
+_MAX_RECONNECTS = 3
+
+
+def _has_transport_drop(case_findings: list[Finding]) -> bool:
+    """True if any finding in this batch is a transport-level failure — the
+    signal that the shared client's connection died (vs. a tool-level error or
+    a clean pass). Drives the reconnect-and-retry in :func:`run_scan`."""
+    return any(
+        bool(f.error) and "transport" in f.error.lower() for f in case_findings
+    )
+
+
+async def _reconnect_client(
+    old: MCPClient, cfg: "ScanConfig"
+) -> tuple[MCPClient, bool]:
+    """Close ``old`` and open a fresh shared client. Returns ``(client, ok)``;
+    ``ok`` is False if the new handshake fails (endpoint truly gone), in which
+    case the caller should stop and mark the rest of the scan as error."""
+    try:
+        await old.__aexit__(None, None, None)
+    except Exception:
+        pass
+    new = MCPClient(
+        cfg.endpoint,
+        timeout_s=cfg.timeout_s,
+        bearer=cfg.bearer,
+        headers=cfg.headers,
+    )
+    try:
+        await new.__aenter__()
+        return new, True
+    except Exception:
+        return new, False
 
 
 def _resolve_outcome(
