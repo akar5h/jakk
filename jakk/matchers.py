@@ -243,7 +243,12 @@ def _cloud_metadata(params: dict[str, Any], response: str, ctx: dict[str, Any]) 
 
 
 _DIRECTIVE_PATTERNS: tuple[str, ...] = (
-    r"(?im)^\s*system\s*[:>]",
+    # Case-SENSITIVE uppercase SYSTEM: — the prompt-injection convention. A
+    # lowercase `system:` is an extremely common benign doc/field label (e.g.
+    # "Returns:\n  system: the OS name"), so matching it case-insensitively
+    # cry-wolfed on normal tool descriptions (found scanning memory-shell-mcp,
+    # 2026-06-12). The imperative patterns below carry the real detection.
+    r"(?m)^\s*SYSTEM\s*[:>]",
     r"(?im)ignore (all )?previous (instructions|messages|prompts)",
     r"(?im)disregard (the )?(above|prior|previous)",
     r"(?im)^\s*<\s*system\s*>",
