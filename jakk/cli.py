@@ -95,6 +95,17 @@ def _build_parser() -> argparse.ArgumentParser:
         "cross-tenant authz failure.",
     )
     scan_p.add_argument(
+        "--exclude-surface",
+        action="append",
+        default=[],
+        metavar="SURFACE",
+        choices=["tool_call", "tool_list", "resource_list", "prompt_list", "auth", "authz"],
+        help="Skip probes on this MCP surface. Pass multiple times. Use "
+        "`--exclude-surface auth` when scanning a stdio server bridged to HTTP, "
+        "where the bridge (not the server) owns the transport, so auth probes "
+        "would only measure the bridge.",
+    )
+    scan_p.add_argument(
         "--jsonl",
         type=Path,
         help="Write findings as JSONL to this path (in addition to console output).",
@@ -145,7 +156,8 @@ def main(argv: list[str] | None = None) -> int:
 def _cmd_scan(args: argparse.Namespace) -> int:
     cases = load_library(args.library)
     selected = filter_cases(
-        cases, select=args.select, owasp=args.owasp, safe_only=args.safe
+        cases, select=args.select, owasp=args.owasp, safe_only=args.safe,
+        exclude_surfaces=args.exclude_surface,
     )
     if not selected:
         print(

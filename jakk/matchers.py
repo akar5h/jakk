@@ -265,6 +265,56 @@ def _directive_passthrough(
     return MatcherResult(False, "", "pass")
 
 
+# Database-engine syntax-error signatures. These strings only surface when
+# attacker-controlled input reached the SQL parser as code (string
+# concatenation) rather than as a bound parameter. A parameterised query treats
+# an injected quote as data and never emits these — so a hit is a low-false-
+# positive signal that the arg is SQL-injectable. Engine-specific on purpose:
+# generic "error" would over-match.
+_SQL_ERROR_PATTERNS: tuple[str, ...] = (
+    r"(?i)syntax error at or near ",                 # PostgreSQL
+    r"(?i)unterminated quoted string",               # PostgreSQL
+    r"(?i)(psycopg2?|asyncpg)\.[A-Za-z]*Error",      # PostgreSQL drivers
+    r"(?i)you have an error in your sql syntax",      # MySQL / MariaDB
+    r"(?i)SQLSTATE\[",                                # PDO / JDBC
+    r"(?i)sqlite3?\.(OperationalError|Warning)",      # SQLite (python)
+    r"(?i)SQL logic error",                           # SQLite
+    r"(?i)unrecognized token:",                       # SQLite
+    r"(?i)near \"[^\"]*\": syntax error",             # SQLite
+    r"(?i)\bORA-\d{5}\b",                             # Oracle
+    r"(?i)unclosed quotation mark after the character string",  # MS SQL Server
+    r"(?i)microsoft.*odbc.*sql server",              # MS SQL Server
+)
+
+
+@register("sql_error")
+def _sql_error(params: dict[str, Any], response: str, ctx: dict[str, Any]) -> MatcherResult:
+    """Fire ``vulnerable`` when the response carries a database-engine syntax
+    error — the error-based SQL-injection signal.
+
+    The probe injects an unbalanced quote into a data-shaped argument. If the
+    server concatenates that arg into a SQL string, the parser breaks and emits
+    an engine-specific syntax error (matched below). A server using bound
+    parameters treats the quote as data → no error → ``pass``.
+
+    This is a content-class signal, NOT a reflection-class one: the error text
+    IS the finding, so it stays ``vulnerable`` even inside an ``isError`` tool
+    result (a SQL error is normally returned as an error). Operators can pass
+    extra ``params.patterns`` for bespoke ORMs/wrappers.
+
+    Caveat: tools that take RAW SQL by design (e.g. ``execute_sql(sql=...)``)
+    will also error on a lone quote; the shipped probe targets ``query``-kind
+    args to avoid those, but a raw-SQL tool named with a data-shaped arg could
+    still produce a benign-by-design hit. Triage against the tool's intent.
+    """
+    extra = tuple(params.get("patterns", ()))
+    for pat in (*_SQL_ERROR_PATTERNS, *extra):
+        m = re.search(pat, response)
+        if m:
+            return MatcherResult(True, _snippet(response, m.group(0)), "vulnerable")
+    return MatcherResult(False, "", "pass")
+
+
 @register("schema_field")
 def _schema_field(params: dict[str, Any], response: str, ctx: dict[str, Any]) -> MatcherResult:
     """Inspect tool schemas/descriptions (passed via ctx['tools']) for hidden content.
