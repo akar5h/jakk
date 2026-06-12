@@ -29,6 +29,15 @@ class ScanConfig:
     into ``path`` but ``owner``/``repo`` must be valid for the call to run).
     These fill any tool-declared arg the probe didn't set, so the call reaches
     the code path under test instead of erroring on a missing parameter."""
+    canary_path: Optional[str] = None
+    """Operator-supplied path for path-traversal probes (``--canary-path``).
+
+    The path probes default to the breach-to-fix lab layout
+    (``/app/files/safe_files_sensitive/...``), which only exists in the lab. On a
+    real target that path doesn't exist, so the probe can't actually exercise the
+    traversal. When set, this overrides the path-kind target arg with a path the
+    operator knows is sensitive / out-of-scope on the real server (e.g.
+    ``/etc/passwd``). Unset → the YAML's lab default is used unchanged."""
 
 
 def _run_id() -> str:
@@ -100,6 +109,7 @@ def _resolve_arguments(
     run_id: str,
     target_arg_kind: Optional[str] = None,
     context_args: Optional[dict[str, str]] = None,
+    canary_path: Optional[str] = None,
 ) -> dict[str, Any]:
     """Expand template strings, position-blind keys, and operator context args.
 
@@ -150,6 +160,13 @@ def _resolve_arguments(
                     f"target_arg_kind={target_arg_kind!r}"
                 )
             key = target_arg
+            # Operator override: when scanning a real server, the YAML's lab
+            # default path doesn't exist. Replace the path-kind target value
+            # with the operator-supplied --canary-path so the probe exercises
+            # THIS server. Scoped to path-kind args so we never retarget a
+            # non-path injection point.
+            if canary_path is not None and target_arg_kind == "path":
+                value = canary_path
         if isinstance(value, str):
             value = value.replace("{run_id}", run_id)
         resolved[key] = value
@@ -199,16 +216,29 @@ async def run_scan(cases: list[TestCase], cfg: ScanConfig) -> list[Finding]:
         findings.append(await _run_authz_case(case, cfg))
 
     if other_cases:
-        async with MCPClient(
-            cfg.endpoint,
-            timeout_s=cfg.timeout_s,
-            bearer=cfg.bearer,
-            headers=cfg.headers,
-        ) as client:
-            tools = await client.list_tools()
-            tools_ctx = [t.to_dict() for t in tools]
-            for case in other_cases:
-                findings.extend(await _run_case(client, case, tools, tools_ctx, cfg))
+        try:
+            async with MCPClient(
+                cfg.endpoint,
+                timeout_s=cfg.timeout_s,
+                bearer=cfg.bearer,
+                headers=cfg.headers,
+            ) as client:
+                try:
+                    tools = await client.list_tools()
+                except Exception as exc:
+                    # Couldn't enumerate the tool surface (auth wall, server
+                    # error). Emit a skip/error PER probe instead of letting the
+                    # exception abort the whole scan — an auth-gated server
+                    # (most commercial ones) would otherwise crash jakk.
+                    outcome, reason = _shared_client_failure(exc)
+                    return findings + _surface_findings(other_cases, cfg, outcome, reason)
+                tools_ctx = [t.to_dict() for t in tools]
+                for case in other_cases:
+                    findings.extend(await _run_case(client, case, tools, tools_ctx, cfg))
+        except Exception as exc:
+            # Handshake/connection failed before we could list tools at all.
+            outcome, reason = _shared_client_failure(exc)
+            findings.extend(_surface_findings(other_cases, cfg, outcome, reason))
     return findings
 
 
@@ -249,7 +279,8 @@ async def _run_corroborated_marker_echo(
         run_id = _run_id()
         try:
             args = _resolve_arguments(
-                args_src, tool, run_id, case.applies_to.target_arg_kind, cfg.context_args
+                args_src, tool, run_id, case.applies_to.target_arg_kind,
+                cfg.context_args, cfg.canary_path,
             )
         except (_UnresolvedFirstStringArg, _UnresolvedTargetArg, _UnsatisfiedRequiredArgs) as exc:
             return Finding(
@@ -417,6 +448,13 @@ async def _run_authz_case(case: TestCase, cfg: ScanConfig) -> Finding:
     params = {k: _expand_authz_template(v, cfg, run_id) for k, v in case.matcher.params.items()}
     result = run_matcher(case.matcher.kind, params, call_b.text, {})
 
+    # Refine against phase-B's error signal. The matcher here is reflection-class
+    # (regex on the tenant tag): if B's read was DENIED but the denial echoes the
+    # requested object/tenant back ("access denied for tenant_alpha"), the regex
+    # matches the rejection, not a leak. _resolve_outcome downgrades that to
+    # `echo` — same cry-wolf guard the tool_call path already has.
+    outcome, evidence, error_note = _resolve_outcome(result, call_b, case.matcher.kind)
+
     return Finding(
         test_id=case.id,
         expected_signal=case.expected_signal,
@@ -424,9 +462,10 @@ async def _run_authz_case(case: TestCase, cfg: ScanConfig) -> Finding:
         surface=case.surface,
         endpoint=cfg.endpoint,
         fired=result.fired,
-        outcome=result.outcome,
+        outcome=outcome,
         tool_name=phase_b.tool,
-        evidence=(result.evidence or f"phase_b response: {call_b.text[:200]}"),
+        evidence=(evidence or f"phase_b response: {call_b.text[:200]}"),
+        error=error_note,
         owasp=list(case.owasp),
         atlas=list(case.atlas),
         payload={
@@ -468,6 +507,7 @@ async def _run_auth_case(case: TestCase, cfg: ScanConfig) -> Finding:
             atlas=list(case.atlas),
         )
 
+    error_note: Optional[str] = None
     try:
         async with MCPClient(
             cfg.endpoint,
@@ -485,9 +525,16 @@ async def _run_auth_case(case: TestCase, cfg: ScanConfig) -> Finding:
             )
             fired = (outcome == "vulnerable")
     except Exception as exc:
-        outcome = "pass"
-        evidence = f"server rejected auth_override={override.mode}: {type(exc).__name__}: {exc}"
         fired = False
+        if _is_transport_failure(exc):
+            # Never reached the server — inconclusive, NOT a hardened server.
+            outcome = "error"
+            error_note = "transport failure: could not complete the auth handshake"
+            evidence = f"could not reach endpoint (scan inconclusive): {type(exc).__name__}: {exc}"
+        else:
+            # Server answered and rejected the bad auth — the secure outcome.
+            outcome = "pass"
+            evidence = f"server rejected auth_override={override.mode}: {type(exc).__name__}: {exc}"
 
     return Finding(
         test_id=case.id,
@@ -498,6 +545,7 @@ async def _run_auth_case(case: TestCase, cfg: ScanConfig) -> Finding:
         fired=fired,
         outcome=outcome,
         evidence=evidence[:300],
+        error=error_note,
         owasp=list(case.owasp),
         atlas=list(case.atlas),
         payload={"auth_override": override.mode},
@@ -509,6 +557,96 @@ async def _run_auth_case(case: TestCase, cfg: ScanConfig) -> Finding:
 # leaking protected data. A hit from one of these INSIDE an error response is
 # reflection-in-a-denial, not a vulnerability.
 _REFLECTION_MATCHERS: frozenset[str] = frozenset({"regex", "substring"})
+
+
+# Exception type names + message markers that mean "we never reached the server"
+# (connection refused, DNS failure, TLS error, timeout) — as opposed to the
+# server being up and actively rejecting our intentionally-bad auth.
+_TRANSPORT_FAILURE_TYPES: frozenset[str] = frozenset({
+    "ConnectError", "ConnectTimeout", "ReadTimeout", "WriteTimeout",
+    "PoolTimeout", "ConnectionError", "ConnectionRefusedError",
+    "TimeoutError", "OSError", "gaierror",
+})
+_TRANSPORT_FAILURE_MARKERS: tuple[str, ...] = (
+    "connection refused", "name or service not known", "nodename nor servname",
+    "failed to establish", "all connection attempts failed", "connect call failed",
+    "cannot connect", "timed out", "timeout", "max retries", "getaddrinfo",
+    "ssl", "certificate",
+)
+
+
+def _is_transport_failure(exc: BaseException) -> bool:
+    """True when an auth-probe exception is a connectivity/transport failure
+    (endpoint unreachable) rather than the server actively rejecting bad auth.
+
+    The auth probes conclude ``pass`` when the server REJECTS intentionally-bad
+    auth (the handshake raised because the server answered 401/403). But a
+    connection refusal, DNS failure, TLS error, or timeout means we never
+    reached the server at all — recording that as ``pass`` would label a dead
+    endpoint as a hardened one (a false negative that quietly inflates a
+    benchmark). Those map to ``error`` (scan inconclusive) instead.
+
+    Walks the exception chain because httpx/anyio wrap the root cause.
+    """
+    seen: set[int] = set()
+    cur: Optional[BaseException] = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        if type(cur).__name__ in _TRANSPORT_FAILURE_TYPES:
+            return True
+        msg = str(cur).lower()
+        if any(marker in msg for marker in _TRANSPORT_FAILURE_MARKERS):
+            return True
+        cur = cur.__cause__ or cur.__context__
+    return False
+
+
+def _shared_client_failure(exc: BaseException) -> tuple[str, str]:
+    """Classify a failure of the shared tool-surface client (handshake or
+    ``list_tools``) into ``(outcome, reason)`` for the tool_call/tool_list/
+    resource_list/prompt_list probes.
+
+    - unreachable (connection / DNS / TLS / timeout) -> ``error`` (inconclusive).
+    - auth wall (401/403) -> ``skipped`` with an actionable hint: we can't
+      enumerate the tool surface without credentials. That's not a server
+      defect — it's a missing ``--bearer``. The auth-SURFACE probes run on their
+      own clients and already report whether the wall is real.
+    - any other enumeration error -> ``error``.
+    """
+    if _is_transport_failure(exc):
+        return "error", f"could not reach endpoint (scan inconclusive): {type(exc).__name__}: {exc}"
+    msg = str(exc).lower()
+    if any(s in msg for s in ("401", "403", "unauthorized", "forbidden")):
+        return "skipped", (
+            "server requires auth to enumerate tools — tool-surface probes not run. "
+            f"Supply --bearer / --header. (list_tools failed: {type(exc).__name__})"
+        )
+    return "error", f"could not enumerate tools: {type(exc).__name__}: {exc}"
+
+
+def _surface_findings(
+    cases: list[TestCase], cfg: "ScanConfig", outcome: str, reason: str
+) -> list[Finding]:
+    """One Finding per case when the shared tool-surface client dies before any
+    probe could run — so every tool-surface probe gets an explicit, uniform
+    skip/error instead of vanishing into a stack trace."""
+    return [
+        Finding(
+            test_id=c.id,
+            expected_signal=c.expected_signal,
+            severity=c.severity,
+            surface=c.surface,
+            endpoint=cfg.endpoint,
+            fired=False,
+            outcome=outcome,
+            tool_name=None,
+            evidence=reason,
+            error=(reason if outcome == "error" else None),
+            owasp=list(c.owasp),
+            atlas=list(c.atlas),
+        )
+        for c in cases
+    ]
 
 
 def _resolve_outcome(
@@ -612,7 +750,7 @@ async def _run_case(
         try:
             arguments = _resolve_arguments(
                 case.payload.arguments, tool, run_id,
-                case.applies_to.target_arg_kind, cfg.context_args,
+                case.applies_to.target_arg_kind, cfg.context_args, cfg.canary_path,
             )
         except (_UnresolvedFirstStringArg, _UnresolvedTargetArg, _UnsatisfiedRequiredArgs) as exc:
             findings.append(

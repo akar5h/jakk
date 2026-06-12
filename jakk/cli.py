@@ -68,6 +68,15 @@ def _build_parser() -> argparse.ArgumentParser:
         "parameter. Pass multiple times.",
     )
     scan_p.add_argument(
+        "--canary-path",
+        metavar="PATH",
+        help="Override the path that path-traversal probes target. They default "
+        "to the breach-to-fix lab layout (/app/files/safe_files_sensitive), which "
+        "only exists in the lab. Supply a path you know is sensitive / out-of-scope "
+        "on the real target (e.g. --canary-path /etc/passwd) so the probe exercises "
+        "THAT server instead of a lab-only path.",
+    )
+    scan_p.add_argument(
         "--cred-a",
         metavar="VALUE",
         help="Identity A's credential. Threaded into authz probe payloads as "
@@ -169,6 +178,7 @@ def _cmd_scan(args: argparse.Namespace) -> int:
         cred_b=args.cred_b,
         foreign_id=args.foreign_id,
         context_args=context_args or None,
+        canary_path=args.canary_path,
     )
     findings = asyncio.run(run_scan(selected, cfg))
 
