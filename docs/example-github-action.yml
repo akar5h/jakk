@@ -1,0 +1,39 @@
+# Example: gate your MCP server on jakk findings before merge.
+# Copy this into your own MCP-server repo's .github/workflows/ and adapt the
+# `stdio` (or `endpoint`) input to launch YOUR server.
+#
+# This is the "shift-left" use of jakk: catch auth-misconfig / path-traversal /
+# tool-poisoning in your server BEFORE you ship, deterministically, with no LLM.
+name: jakk security scan (example)
+
+on:
+  workflow_dispatch: {}
+  # pull_request: {}   # ← uncomment to gate every PR
+
+jobs:
+  jakk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- stdio server: jakk spawns it directly (no hosting needed) ---
+      - name: Scan (stdio)
+        uses: akar5h/jakk@main
+        with:
+          stdio: "uvx --from . my-mcp-server"   # ← your server's launch command
+          args: "--safe"                          # read-only probes only
+          fail-on-fired: "true"                   # fail the job on any finding
+
+      # --- OR an HTTP server you start in a prior step ---
+      # - name: Scan (http)
+      #   uses: akar5h/jakk@main
+      #   with:
+      #     endpoint: "http://127.0.0.1:8000/mcp"
+      #     args: "--bearer ${{ secrets.MCP_TEST_TOKEN }} --exclude-surface auth"
+
+      - name: Upload findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jakk-findings
+          path: jakk-findings.jsonl
