@@ -22,7 +22,15 @@ def _build_parser() -> argparse.ArgumentParser:
     mcp_sub = mcp_p.add_subparsers(dest="cmd", required=True)
 
     scan_p = mcp_sub.add_parser("scan", help="Scan an MCP endpoint with a YAML attack library.")
-    scan_p.add_argument("--endpoint", required=True, help="MCP streamable-HTTP endpoint URL.")
+    scan_p.add_argument("--endpoint", help="MCP streamable-HTTP endpoint URL. (Or use --stdio.)")
+    scan_p.add_argument(
+        "--stdio",
+        metavar="COMMAND",
+        help="Scan a stdio MCP server spawned from this command instead of an "
+        "HTTP endpoint, e.g. --stdio 'uvx mcp-server-git'. No bridge needed; auth "
+        "probes are skipped (stdio has no transport-auth layer). Mutually "
+        "exclusive with --endpoint.",
+    )
     scan_p.add_argument(
         "--library",
         required=True,
@@ -167,6 +175,10 @@ def _cmd_scan(args: argparse.Namespace) -> int:
         )
         return 1
 
+    if bool(args.endpoint) == bool(args.stdio):
+        print("provide exactly one of --endpoint or --stdio", file=sys.stderr)
+        return 1
+
     if args.bearer and args.oauth_token_file:
         print("--bearer and --oauth-token-file are mutually exclusive", file=sys.stderr)
         return 1
@@ -181,8 +193,9 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     headers = _parse_headers(args.header)
     context_args = _parse_kv(args.arg, flag="--arg")
 
+    endpoint = args.endpoint or f"stdio:{args.stdio}"
     cfg = ScanConfig(
-        endpoint=args.endpoint,
+        endpoint=endpoint,
         timeout_s=args.timeout,
         bearer=bearer,
         headers=headers or None,
@@ -191,10 +204,11 @@ def _cmd_scan(args: argparse.Namespace) -> int:
         foreign_id=args.foreign_id,
         context_args=context_args or None,
         canary_path=args.canary_path,
+        stdio_command=args.stdio,
     )
     findings = asyncio.run(run_scan(selected, cfg))
 
-    render_console(findings, endpoint=args.endpoint)
+    render_console(findings, endpoint=endpoint)
     if args.jsonl:
         write_jsonl(findings, args.jsonl)
 

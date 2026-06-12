@@ -7,6 +7,7 @@ tests that exercise only library + matchers).
 """
 from __future__ import annotations
 
+import shlex
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -93,11 +94,12 @@ class MCPClient:
 
     def __init__(
         self,
-        endpoint: str,
+        endpoint: Optional[str] = None,
         timeout_s: float = 15.0,
         bearer: Optional[str] = None,
         headers: Optional[dict[str, str]] = None,
         auth_override: Optional[str] = None,
+        stdio_command: Optional[str] = None,
     ) -> None:
         """
         :param bearer: bearer token; sent as ``Authorization: Bearer <token>``.
@@ -116,6 +118,10 @@ class MCPClient:
         self.bearer = bearer
         self.headers = dict(headers or {})
         self.auth_override = auth_override
+        self.stdio_command = stdio_command
+        """When set, talk to a stdio MCP server spawned from this command string
+        (e.g. ``uvx mcp-server-git``) instead of an HTTP endpoint. No transport
+        auth applies — stdio is a local subprocess pipe."""
         self._client = None
         self._ctx = None
 
@@ -147,10 +153,21 @@ class MCPClient:
 
     async def __aenter__(self) -> "MCPClient":
         from fastmcp import Client
-        from fastmcp.client.transports import StreamableHttpTransport
 
-        kw = self._resolve_transport_kwargs()
-        transport = StreamableHttpTransport(self.endpoint, headers=kw["headers"], auth=kw["auth"])
+        if self.stdio_command:
+            # Spawn a stdio MCP server and talk over its stdin/stdout pipe —
+            # no HTTP, no bridge. Auth/headers don't apply to a local subprocess.
+            from fastmcp.client.transports import StdioTransport
+
+            parts = shlex.split(self.stdio_command)
+            if not parts:
+                raise ValueError("empty stdio command")
+            transport = StdioTransport(command=parts[0], args=parts[1:])
+        else:
+            from fastmcp.client.transports import StreamableHttpTransport
+
+            kw = self._resolve_transport_kwargs()
+            transport = StreamableHttpTransport(self.endpoint, headers=kw["headers"], auth=kw["auth"])
         self._client = Client(transport, timeout=self.timeout_s)
         self._ctx = await self._client.__aenter__()
         return self

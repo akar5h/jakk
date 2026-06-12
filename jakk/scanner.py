@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import secrets
+import urllib.parse
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -29,6 +30,11 @@ class ScanConfig:
     into ``path`` but ``owner``/``repo`` must be valid for the call to run).
     These fill any tool-declared arg the probe didn't set, so the call reaches
     the code path under test instead of erroring on a missing parameter."""
+    stdio_command: Optional[str] = None
+    """When set (``--stdio "uvx mcp-server-git"``), scan a stdio MCP server
+    spawned from this command instead of an HTTP ``endpoint``. The whole tool
+    surface is reachable over the subprocess pipe; ``auth`` probes are N/A
+    (stdio has no transport-auth layer) and are emitted as ``skipped``."""
     canary_path: Optional[str] = None
     """Operator-supplied path for path-traversal probes (``--canary-path``).
 
@@ -210,7 +216,16 @@ async def run_scan(cases: list[TestCase], cfg: ScanConfig) -> list[Finding]:
     other_cases = [c for c in cases if c.surface not in ("auth", "authz")]
 
     for case in auth_cases:
-        findings.append(await _run_auth_case(case, cfg))
+        if cfg.stdio_command:
+            # stdio is a local subprocess pipe — no transport-auth layer to test.
+            findings.append(
+                _surface_findings(
+                    [case], cfg, "skipped",
+                    "auth surface N/A for stdio transport (no transport-auth layer)",
+                )[0]
+            )
+        else:
+            findings.append(await _run_auth_case(case, cfg))
 
     for case in authz_cases:
         findings.append(await _run_authz_case(case, cfg))
@@ -221,6 +236,7 @@ async def run_scan(cases: list[TestCase], cfg: ScanConfig) -> list[Finding]:
             timeout_s=cfg.timeout_s,
             bearer=cfg.bearer,
             headers=cfg.headers,
+            stdio_command=cfg.stdio_command,
         )
         try:
             await client.__aenter__()
@@ -452,6 +468,7 @@ async def _run_authz_case(case: TestCase, cfg: ScanConfig) -> Finding:
         timeout_s=cfg.timeout_s,
         bearer=cfg.bearer,
         headers=cfg.headers,
+        stdio_command=cfg.stdio_command,
     ) as client:
         call_a = await client.call_tool(phase_a.tool, a_args)
         # Sanity check: A should be able to read its own object. If not, the
@@ -557,6 +574,19 @@ async def _run_auth_case(case: TestCase, cfg: ScanConfig) -> Finding:
                 f"list_tools returned {len(tools)} tool(s)"
             )
             fired = (outcome == "vulnerable")
+            # Loopback caveat: "accepted bad auth" over 127.0.0.1/localhost is
+            # ambiguous — the server may trust localhost for dev while enforcing
+            # auth remotely. Don't cry `vulnerable` from the one vantage that's
+            # often trusted; downgrade to `suggestive` and say verify remotely.
+            if outcome == "vulnerable" and _is_loopback_endpoint(cfg.endpoint):
+                outcome = "suggestive"
+                fired = False
+                evidence = (
+                    "LOOPBACK — " + evidence + ". Endpoint is loopback; the "
+                    "server may trust localhost (dev convenience) while rejecting "
+                    "remote clients. Re-scan from a non-loopback host to confirm "
+                    "a real auth bypass."
+                )
     except Exception as exc:
         fired = False
         if _is_transport_failure(exc):
@@ -606,6 +636,22 @@ _TRANSPORT_FAILURE_MARKERS: tuple[str, ...] = (
     "cannot connect", "timed out", "timeout", "max retries", "getaddrinfo",
     "ssl", "certificate",
 )
+
+
+def _is_loopback_endpoint(endpoint: Optional[str]) -> bool:
+    """True if the scan endpoint is loopback (localhost / 127.x / ::1 / 0.0.0.0).
+
+    Auth findings from a loopback scan are ambiguous: many servers trust
+    localhost for dev convenience ("allow localhost unauthenticated") while
+    enforcing auth for remote clients. So "accepted bad auth" over loopback may
+    be localhost-trust, not a real bypass — we can't tell from here."""
+    if not endpoint:
+        return False
+    try:
+        host = (urllib.parse.urlparse(endpoint).hostname or "").lower()
+    except Exception:
+        return False
+    return host in ("localhost", "::1", "0.0.0.0") or host.startswith("127.")
 
 
 def _is_transport_failure(exc: BaseException) -> bool:
@@ -712,6 +758,7 @@ async def _reconnect_client(
         timeout_s=cfg.timeout_s,
         bearer=cfg.bearer,
         headers=cfg.headers,
+        stdio_command=cfg.stdio_command,
     )
     try:
         await new.__aenter__()
