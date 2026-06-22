@@ -1,25 +1,39 @@
 ---
 date: 2026-05-23
-status: forward roadmap — near-term build queue + deferred-with-reasons
+status: forward roadmap — launch-ready v0.2 + next build queue
 scope: what's next, what's parked and why, with the analysis behind each call
 ---
 
 # jakk roadmap
 
-Two tiers: **near-term** (actively queued for v0.3) and **deferred**
-(parked with the reasoning, so we don't relitigate or forget). Every
-deferral records *why* it's not now and *what would change the call*.
+Three tiers: **v0.2 launch-ready** (already built), **near-term** (next
+highest-leverage work), and **deferred** (parked with reasoning, so we
+don't relitigate or forget). Every deferral records *why* it's not now
+and *what would change the call*.
 
 ---
 
-## Near-term (v0.3 build queue, ranked)
+## v0.2 launch-ready
+
+| Item | Status | Notes |
+|---|---|---|
+| **GitHub Action form factor** | done | Safe-by-default CI scan, JSONL output, optional PR gating. |
+| **Context-arg supply** (`--arg k=v`) | done | Closes the GitHub MCP multi-required-arg coverage gap. |
+| **SSRF probe** (`mcp.ssrf.cloud_metadata`) | done | Uses `url` arg-kind and cloud metadata matcher. |
+| **`query`-kind SQLi probe** (`mcp.sql.error_based`) | done | First query-kind probe; error-based MVP. |
+| **`auth.wrong_prefix` severity recalibration** | done | high -> low; framed as spec-laxity/hardening. |
+| **Stdio smoke scans** (`--stdio`) | done | Local input-handling/schema scan support; auth probes skip as N/A. |
+
+---
+
+## Near-term (next build queue, ranked)
 
 | # | Item | Status | Why this rank |
 |---|---|---|---|
-| 1 | **Context-arg supply** — fill non-target required args (`owner`, `repo`) with valid values via `--arg k=v` or a context file | queued | Biggest coverage blocker. Until fixed, jakk can't probe ANY multi-arg production tool — it errors on `get_file_contents` before testing. Surfaced by the GitHub run. |
-| 2 | **SSRF probe** (`mcp.ssrf.cloud_metadata`) | **in progress** | Research-backed: 36.7% of 7,000 scanned servers vulnerable (BlueRock); real AWS IAM key retrieval via cloud metadata. Uses the dormant `url` arg-kind. Deterministic, HTTP-scoped, jakk-shaped. |
-| 3 | **`query`-kind probe** | queued | GitHub exposes 5 `search_*` tools with `query` args no probe targets. Query-syntax injection + over-broad result leakage. The `query` arg-kind already exists in the registry. |
-| 4 | **`auth.wrong_prefix` severity recalibration** | ✅ done | high → low; reworded as spec-laxity not bypass. |
+| 1 | **SARIF output** | queued | Best GitHub-native upgrade: findings show in code scanning/security UI instead of only JSONL artifacts. |
+| 2 | **Action examples for common MCP stacks** | queued | Short, copy-paste workflows for FastMCP, Node MCP SDK, and Docker Compose targets reduce first-run friction. |
+| 3 | **Per-tool context map** | queued | Current `--arg` is global. A context file keyed by tool name helps servers whose tools need different valid IDs. |
+| 4 | **BOLA write / stored-injection chain probe** | queued | Builds on the ch01-extended experiment; high-impact but needs careful side-effect controls and restore semantics. |
 
 ---
 
@@ -126,13 +140,6 @@ urgency until both tools are being run on the same target.
 `mcp-server-distribution-decision.md`. CLI fits the user; MCP-server
 form adds a dogfooding tax (8 of 11 probes would apply to
 jakk-as-server) for no user benefit.
-
-### D6 · stdio transport
-
-**Why deferred — effectively permanently.** jakk targets HTTP
-production servers; stdio is single-user local-dev where the auth +
-authz probes don't apply. See `scope-decision.md`. Escape hatch:
-stdio-default servers that also ship HTTP mode get run in HTTP mode.
 
 ---
 

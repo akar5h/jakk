@@ -47,11 +47,15 @@ jakk mcp scan --endpoint http://127.0.0.1:8008/mcp/stream --library library/mcp 
 | `mcp.schema.description_smuggling` | MCP01/03 | high | safe | `schema.tool_poisoning` | [tests/mcp.schema.description_smuggling.md](tests/mcp.schema.description_smuggling.md) |
 | `mcp.auth.no_credential` | MCP10 | critical | safe | `auth.anonymous_access` | [tests/mcp.auth.no_credential.md](tests/mcp.auth.no_credential.md) |
 | `mcp.auth.invalid_token` | MCP10 | critical | safe | `auth.token_not_validated` | [tests/mcp.auth.invalid_token.md](tests/mcp.auth.invalid_token.md) |
-| `mcp.auth.wrong_prefix` | MCP10 | high | safe | `auth.scheme_not_enforced` | [tests/mcp.auth.wrong_prefix.md](tests/mcp.auth.wrong_prefix.md) |
+| `mcp.auth.wrong_prefix` | MCP10 | low | safe | `auth.scheme_not_enforced` | [tests/mcp.auth.wrong_prefix.md](tests/mcp.auth.wrong_prefix.md) |
 | `mcp.authz.cross_tenant_read` | MCP08 | critical | safe | `authz.cross_tenant_read` | [tests/mcp.authz.cross_tenant_read.md](tests/mcp.authz.cross_tenant_read.md) |
 | `mcp.ssrf.cloud_metadata` | MCP04 | critical | safe | `ssrf.cloud_metadata` | [ssrf/README.md](ssrf/README.md) |
+| `mcp.sql.error_based` | MCP05 | high | unsafe | `input.sql_injection` | [tests/mcp.sql.error_based.md](tests/mcp.sql.error_based.md) |
 
-`--safe` runs only the rows with `side_effect: safe` — the 3 auth probes + the 3 response/schema probes (6 total). Use it against any server where state mutation is unacceptable (production, commercial, anything you don't own).
+`--safe` runs only the rows with `side_effect: safe` — auth/authz,
+response/schema, and SSRF probes (8 total). Use it against any server
+where state mutation is unacceptable (production, commercial, anything
+you don't own).
 
 ## Library YAML schema
 
@@ -154,6 +158,9 @@ finds the path-shaped arg wherever it lives.
 | `--oauth-token-file PATH` | Read bearer from file (CI secrets). Mutually exclusive with `--bearer`. |
 | `--header KEY=VALUE` | Custom HTTP header. Pass multiple times. |
 | `--arg KEY=VALUE` | Supply valid values for non-target tool args (e.g. `owner`, `repo`) so multi-arg tools execute instead of erroring. Pass multiple times. See [context-args/README.md](context-args/README.md). |
+| `--canary-path PATH` | Override the default lab path used by path-traversal probes with a path meaningful on the target. |
 | `--cred-a VALUE` | Identity A's credential for authz probes. Template: `{cred_a}`. |
 | `--cred-b VALUE` | Identity B's credential for authz probes. Template: `{cred_b}`. |
 | `--foreign-id VALUE` | Object ID owned by A's tenant. Template: `{foreign_id}`. |
+| `--stdio COMMAND` | Spawn and scan a stdio MCP server. Auth probes are skipped because stdio has no transport-auth layer. |
+| `--exclude-surface SURFACE` | Skip a surface such as `auth`, `authz`, or `tool_call`. Useful for scoped CI checks. |

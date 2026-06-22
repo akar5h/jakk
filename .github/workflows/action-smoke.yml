@@ -1,0 +1,39 @@
+name: Action smoke
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  stdio-action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run local jakk Action against stdio smoke server
+        uses: ./
+        with:
+          stdio: "python examples/stdio_smoke_server.py"
+          jsonl: "jakk-action-smoke.jsonl"
+
+      - name: Verify findings artifact exists
+        run: |
+          test -s jakk-action-smoke.jsonl
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          findings = [json.loads(line) for line in Path("jakk-action-smoke.jsonl").read_text().splitlines()]
+          assert findings, "expected at least one finding row"
+          fired = [f for f in findings if f.get("fired")]
+          assert not fired, f"expected clean smoke server, got fired findings: {fired}"
+          print(f"verified {len(findings)} finding rows; none fired")
+          PY
+
+      - name: Upload smoke findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jakk-action-smoke-findings
+          path: jakk-action-smoke.jsonl

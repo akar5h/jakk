@@ -1,7 +1,7 @@
 ---
 date: 2026-05-22
 status: threat-model reference — what "vulnerable" means per probe class
-scope: all 11 v0.2 probes
+scope: all 13 v0.2 probes
 ---
 
 # What "vulnerable" actually means
@@ -182,17 +182,23 @@ chat).
 **Signal:** `auth.anonymous_access` / `auth.token_not_validated` / `auth.scheme_not_enforced` · **OWASP:** MCP10
 
 ### What "vulnerable" means
-The server accepts requests with no Authorization header, or with a
-garbage Bearer token, or with a token sent without the `Bearer `
+The server accepts requests with no Authorization header, with a
+garbage Bearer token, or with a valid token sent without the `Bearer `
 scheme prefix.
 
 ### Concrete harm
-**Anonymous access to the entire tool surface.** Anyone who can
-reach the endpoint can call every tool:
+For `no_credential` and `invalid_token`: **anonymous access to the
+entire tool surface.** Anyone who can reach the endpoint can call every
+tool:
 
 - If tools mutate data (create projects, send messages, transfer money), anyone can do that too.
 - If tools read data, anyone can read it.
 - If tools have side effects (run jobs, trigger deployments), anyone triggers them.
+
+For `wrong_prefix`: usually low severity on its own. The token is still
+validated; the finding is spec-laxity and a signal to review auth
+parsing, especially if a gateway and origin might parse
+`Authorization` differently.
 
 ### Who's the attacker
 Any internet host that can reach the endpoint, OR any internal
@@ -200,10 +206,14 @@ network host if the endpoint is private but the auth proxy is
 broken.
 
 ### Who's harmed
-Every customer / user whose data is behind the server. Server
-operator catastrophically. If the server is a fronting proxy for a
-real backend, the backend's auth is now effectively bypassed for
-everyone who knew the endpoint URL.
+For `no_credential` and `invalid_token`, every customer / user whose
+data is behind the server. Server operator catastrophically. If the
+server is a fronting proxy for a real backend, the backend's auth is now
+effectively bypassed for everyone who knew the endpoint URL.
+
+For `wrong_prefix`, the harmed party is usually the operator relying on
+strict auth normalization; triage as hardening unless paired with a
+demonstrated parser differential or token-validation flaw.
 
 ### When this is NOT a finding
 Some servers are intentionally public (read-only documentation,
@@ -251,6 +261,31 @@ for B2B SaaS, often warranting public disclosure obligations
 
 ---
 
+## `mcp.sql.error_based`
+
+**Signal:** `input.sql_injection` · **OWASP:** MCP05
+
+### What "vulnerable" means
+The server returns a database syntax-error signature after jakk sends an
+unbalanced quote into a query-shaped argument. That is evidence the
+argument influenced SQL syntax instead of being bound as data.
+
+### Concrete harm
+Depending on the query and database permissions, an attacker may be able
+to broaden reads, extract rows, modify data, or use database-specific
+features for further escalation.
+
+### Who's the attacker
+Anyone who can influence the argument passed to the tool. In MCP
+deployments that often means untrusted content steering an LLM into a
+tool call, or a direct user/customer invoking a search or lookup tool.
+
+### Who's harmed
+The server operator and any users or tenants whose data is reachable
+through the vulnerable query path.
+
+---
+
 ## When the probe is wrong
 
 The threat models above assume the probe fires *correctly*. jakk has
@@ -263,6 +298,7 @@ known limitations where `vulnerable` may be inaccurate:
 | `mcp.response.directive_passthrough` | A blog post or tutorial discussing prompt injection contains `"Ignore previous instructions"` as quoted example text. Same — operator triage. |
 | `mcp.auth.*` | An intentionally-public server returns tools without auth. True positive in the matcher's terms, but not actionable. Document via per-target override. |
 | `mcp.authz.cross_tenant_read` | The matcher's regex is target-specific. A generic regex would over-fire. The provided pattern (`"tenant"\s*:\s*"tenant_alpha"`) only works on ch01-style servers; other targets need a custom matcher. |
+| `mcp.sql.error_based` | A tool intentionally accepts raw SQL, or returns a tutorial/error fixture containing database syntax text. The shipped probe targets query-shaped args to reduce this risk. |
 
 Triage rule: every `vulnerable` finding deserves a human look at the
 `evidence` and `payload` in the JSONL before being filed as a bug.

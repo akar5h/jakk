@@ -19,9 +19,13 @@ inputs:
     required: false
     default: ""
   args:
-    description: "Extra jakk flags as one string, e.g. '--safe --bearer $TOKEN --arg owner=octocat'."
+    description: "Extra jakk flags as one string, e.g. '--bearer $TOKEN --arg owner=octocat'."
     required: false
     default: ""
+  safe:
+    description: "Run only probes annotated side_effect: safe. Defaults to true for responsible CI use; set to 'false' only for authorized test targets where mutation is acceptable."
+    required: false
+    default: "true"
   fail-on-fired:
     description: "Fail the job if any probe fires (vulnerable/echo). Set 'false' to report-only."
     required: false
@@ -60,6 +64,9 @@ runs:
         fail=()
         [ "${{ inputs.fail-on-fired }}" = "true" ] && fail=(--exit-nonzero-on-fired)
 
+        safe=()
+        [ "${{ inputs.safe }}" != "false" ] && safe=(--safe)
+
         # NOTE: 'args' is intentionally word-split so callers can pass multiple flags.
         jakk mcp scan "${target[@]}" --library "$lib" --jsonl "${{ inputs.jsonl }}" \
-          "${fail[@]}" ${{ inputs.args }}
+          "${safe[@]}" "${fail[@]}" ${{ inputs.args }}
