@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  security-events: write
 
 jobs:
   github-mcp-server:
@@ -45,28 +46,41 @@ jobs:
           args: "--bearer ${{ github.token }} --safe"
           fail-on-fired: "false"
           jsonl: "jakk-github-mcp-smoke.jsonl"
+          sarif: "jakk-github-mcp-smoke.sarif"
 
       - name: Verify real-target smoke output
         run: |
           test -s jakk-github-mcp-smoke.jsonl
+          test -s jakk-github-mcp-smoke.sarif
           python - <<'PY'
           import json
           from collections import Counter
           from pathlib import Path
 
           findings = [json.loads(line) for line in Path("jakk-github-mcp-smoke.jsonl").read_text().splitlines()]
+          sarif = json.loads(Path("jakk-github-mcp-smoke.sarif").read_text())
           assert findings, "expected at least one finding row"
+          assert sarif["version"] == "2.1.0"
+          assert sarif["runs"][0]["tool"]["driver"]["name"] == "jakk"
           outcomes = Counter(f["outcome"] for f in findings)
           print(f"verified {len(findings)} finding rows against github-mcp-server")
           print("outcomes:", dict(sorted(outcomes.items())))
+          print(f"SARIF results: {len(sarif['runs'][0]['results'])}")
           PY
+
+      - name: Upload SARIF to GitHub code scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: jakk-github-mcp-smoke.sarif
 
       - name: Upload real-target findings
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: jakk-github-mcp-smoke-findings
-          path: jakk-github-mcp-smoke.jsonl
+          path: |
+            jakk-github-mcp-smoke.jsonl
+            jakk-github-mcp-smoke.sarif
 
       - name: Stop GitHub MCP server
         if: always()

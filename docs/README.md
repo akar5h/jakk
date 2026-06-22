@@ -79,6 +79,11 @@ response/schema, and SSRF probes (8 total). Use it against any server
 where state mutation is unacceptable (production, commercial, anything
 you don't own).
 
+SARIF upload is tested in `.github/workflows/real-target-smoke.yml`: the
+workflow scans GitHub's official MCP server Docker image, verifies SARIF
+2.1.0 output, uploads it with `github/codeql-action/upload-sarif@v3`,
+and stores JSONL/SARIF artifacts.
+
 ## Library YAML schema
 
 ```yaml
