@@ -52,8 +52,11 @@ written, and asserts that no finding fired on the clean fixture.
 For a known external implementation, run
 [`Real target smoke`](.github/workflows/real-target-smoke.yml) manually.
 It starts GitHub's official `github-mcp-server` Docker image in read-only
-HTTP mode, scans it with the local Action, writes JSONL, and uploads the
-findings artifact.
+HTTP mode, scans it with the local Action, writes JSONL + SARIF, uploads
+SARIF with `github/codeql-action/upload-sarif@v3`, and saves the findings
+artifact.
+
+That workflow is the real-target SARIF ingestion smoke test.
 
 ```yaml
 name: MCP security smoke test
