@@ -12,6 +12,10 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
   jakk:
     runs-on: ubuntu-latest
@@ -42,6 +46,13 @@ jobs:
         with:
           endpoint: http://127.0.0.1:8000/mcp
           args: "--bearer ${{ secrets.MCP_TEST_TOKEN }}"
+          sarif: jakk-findings.sarif
+
+      - name: Upload jakk SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: jakk-findings.sarif
 
       - name: Upload jakk findings
         if: always()

@@ -16,16 +16,21 @@ jobs:
         with:
           stdio: "python examples/stdio_smoke_server.py"
           jsonl: "jakk-action-smoke.jsonl"
+          sarif: "jakk-action-smoke.sarif"
 
-      - name: Verify findings artifact exists
+      - name: Verify findings artifacts exist
         run: |
           test -s jakk-action-smoke.jsonl
+          test -s jakk-action-smoke.sarif
           python - <<'PY'
           import json
           from pathlib import Path
 
           findings = [json.loads(line) for line in Path("jakk-action-smoke.jsonl").read_text().splitlines()]
+          sarif = json.loads(Path("jakk-action-smoke.sarif").read_text())
           assert findings, "expected at least one finding row"
+          assert sarif["version"] == "2.1.0"
+          assert sarif["runs"][0]["results"] == [], "clean fixture should produce no SARIF alerts"
           fired = [f for f in findings if f.get("fired")]
           assert not fired, f"expected clean smoke server, got fired findings: {fired}"
           print(f"verified {len(findings)} finding rows; none fired")
@@ -36,4 +41,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: jakk-action-smoke-findings
-          path: jakk-action-smoke.jsonl
+          path: |
+            jakk-action-smoke.jsonl
+            jakk-action-smoke.sarif

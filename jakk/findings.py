@@ -1,6 +1,7 @@
-"""Finding model + JSONL writer + console renderer."""
+"""Finding model + JSONL/SARIF writers + console renderer."""
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -37,6 +38,138 @@ def write_jsonl(findings: list[Finding], path: Path | str) -> None:
     with out_path.open("w", encoding="utf-8") as fh:
         for f in findings:
             fh.write(json.dumps(f.to_dict(), ensure_ascii=False) + "\n")
+
+
+_SARIF_LEVEL = {
+    "critical": "error",
+    "high": "error",
+    "medium": "warning",
+    "low": "note",
+    "info": "note",
+}
+
+_SARIF_SECURITY_SEVERITY = {
+    "critical": "9.0",
+    "high": "8.0",
+    "medium": "5.0",
+    "low": "2.0",
+    "info": "0.0",
+}
+
+
+def _sarif_rule(findings_for_rule: list[Finding]) -> dict[str, Any]:
+    sample = findings_for_rule[0]
+    tags = sorted({*sample.owasp, *sample.atlas, sample.expected_signal, sample.surface})
+    return {
+        "id": sample.test_id,
+        "name": sample.test_id,
+        "shortDescription": {"text": sample.expected_signal},
+        "fullDescription": {
+            "text": (
+                f"jakk probe {sample.test_id} detects {sample.expected_signal} "
+                f"on the MCP {sample.surface} surface."
+            )
+        },
+        "defaultConfiguration": {
+            "level": _SARIF_LEVEL.get(sample.severity, "warning"),
+        },
+        "properties": {
+            "precision": "high",
+            "problem.severity": sample.severity,
+            "security-severity": _SARIF_SECURITY_SEVERITY.get(sample.severity, "0.0"),
+            "tags": [t for t in tags if t],
+        },
+    }
+
+
+def _sarif_fingerprint(finding: Finding) -> str:
+    basis = {
+        "test_id": finding.test_id,
+        "endpoint": finding.endpoint,
+        "tool_name": finding.tool_name,
+        "outcome": finding.outcome,
+        "expected_signal": finding.expected_signal,
+    }
+    raw = json.dumps(basis, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _sarif_result(finding: Finding) -> dict[str, Any]:
+    tool = f" via tool {finding.tool_name}" if finding.tool_name else ""
+    message = (
+        f"{finding.outcome}: {finding.test_id}{tool} on {finding.endpoint}. "
+        f"Evidence: {finding.evidence or '<none>'}"
+    )
+    return {
+        "ruleId": finding.test_id,
+        "level": _SARIF_LEVEL.get(finding.severity, "warning"),
+        "message": {"text": message[:4000]},
+        "locations": [
+            {
+                "physicalLocation": {
+                    "artifactLocation": {
+                        # MCP findings are target-level rather than source-line
+                        # findings. Use a synthetic relative artifact URI so
+                        # GitHub code scanning can ingest and group the alert
+                        # while JSONL carries the full per-call record.
+                        "uri": "jakk-mcp-scan",
+                    }
+                }
+            }
+        ],
+        "partialFingerprints": {
+            "primaryLocationLineHash": _sarif_fingerprint(finding),
+        },
+        "properties": {
+            "endpoint": finding.endpoint,
+            "tool_name": finding.tool_name,
+            "surface": finding.surface,
+            "severity": finding.severity,
+            "outcome": finding.outcome,
+            "expected_signal": finding.expected_signal,
+            "owasp": finding.owasp,
+            "atlas": finding.atlas,
+            "payload": finding.payload,
+            "evidence": finding.evidence,
+        },
+    }
+
+
+def to_sarif(findings: list[Finding]) -> dict[str, Any]:
+    """Convert fired findings to SARIF 2.1.0.
+
+    JSONL remains the complete scan transcript. SARIF intentionally contains
+    only actionable fired findings, so GitHub code scanning does not fill with
+    pass/skipped/error noise.
+    """
+    fired = [f for f in findings if f.fired]
+    by_rule: dict[str, list[Finding]] = {}
+    for finding in fired:
+        by_rule.setdefault(finding.test_id, []).append(finding)
+    rules = [_sarif_rule(by_rule[k]) for k in sorted(by_rule)]
+    results = [_sarif_result(f) for f in fired]
+    return {
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "jakk",
+                        "informationUri": "https://github.com/akar5h/jakk",
+                        "rules": rules,
+                    }
+                },
+                "results": results,
+            }
+        ],
+    }
+
+
+def write_sarif(findings: list[Finding], path: Path | str) -> None:
+    out_path = Path(path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(to_sarif(findings), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 _SEV_COLOR = {

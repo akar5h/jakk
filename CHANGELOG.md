@@ -23,7 +23,7 @@ self-security audit.
 ### Capabilities
 
 - **GitHub Action**: safe-by-default Marketplace form factor for PR
-  checks. Emits JSONL and can fail CI with `--exit-nonzero-on-fired`.
+  checks. Emits JSONL/SARIF and can fail CI with `--exit-nonzero-on-fired`.
 - **Auth** for commercial targets: `--bearer`, `--oauth-token-file`,
   `--header KEY=VALUE`.
 - **`--safe`** + `side_effect: safe|unsafe` classification — run only
@@ -36,6 +36,8 @@ self-security audit.
   erroring. Actionable `skipped` when required args are unsatisfied.
 - **Canary path override** (`--canary-path PATH`): retarget path probes
   from lab defaults to a path meaningful on the current target.
+- **SARIF output** (`--sarif PATH`): emit fired findings as SARIF 2.1.0
+  for GitHub code scanning. JSONL remains the complete transcript.
 - **Stdio smoke scans** (`--stdio COMMAND`): launch local stdio MCP
   servers for input-handling/schema probes; auth probes are skipped
   because stdio has no transport-auth layer.

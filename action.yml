@@ -34,6 +34,10 @@ inputs:
     description: "Where to write findings JSONL (your workflow can upload it as an artifact)."
     required: false
     default: "jakk-findings.jsonl"
+  sarif:
+    description: "Optional SARIF output path for GitHub code scanning, e.g. jakk-findings.sarif."
+    required: false
+    default: ""
 
 runs:
   using: "composite"
@@ -67,6 +71,9 @@ runs:
         safe=()
         [ "${{ inputs.safe }}" != "false" ] && safe=(--safe)
 
+        sarif=()
+        [ -n "${{ inputs.sarif }}" ] && sarif=(--sarif "${{ inputs.sarif }}")
+
         # NOTE: 'args' is intentionally word-split so callers can pass multiple flags.
         jakk mcp scan "${target[@]}" --library "$lib" --jsonl "${{ inputs.jsonl }}" \
-          "${safe[@]}" "${fail[@]}" ${{ inputs.args }}
+          "${sarif[@]}" "${safe[@]}" "${fail[@]}" ${{ inputs.args }}
