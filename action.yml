@@ -1,0 +1,72 @@
+name: "jakk MCP security scan"
+description: "Deterministic black-box security scan of an MCP server. No LLM. Gates CI on findings."
+author: "akar5h"
+branding:
+  icon: "shield"
+  color: "red"
+
+inputs:
+  endpoint:
+    description: "MCP streamable-HTTP endpoint URL to scan. Use this OR stdio."
+    required: false
+    default: ""
+  stdio:
+    description: "Command that launches a stdio MCP server, e.g. 'uvx my-mcp-server'. Use this OR endpoint."
+    required: false
+    default: ""
+  library:
+    description: "Path to a jakk probe-library directory. Defaults to the bundled library."
+    required: false
+    default: ""
+  args:
+    description: "Extra jakk flags as one string, e.g. '--bearer $TOKEN --arg owner=octocat'."
+    required: false
+    default: ""
+  safe:
+    description: "Run only probes annotated side_effect: safe. Defaults to true for responsible CI use; set to 'false' only for authorized test targets where mutation is acceptable."
+    required: false
+    default: "true"
+  fail-on-fired:
+    description: "Fail the job if any probe fires (vulnerable/echo). Set 'false' to report-only."
+    required: false
+    default: "true"
+  jsonl:
+    description: "Where to write findings JSONL (your workflow can upload it as an artifact)."
+    required: false
+    default: "jakk-findings.jsonl"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: Install jakk
+      shell: bash
+      run: pip install "${{ github.action_path }}"
+
+    - name: Run jakk MCP scan
+      shell: bash
+      run: |
+        set -euo pipefail
+        lib="${{ inputs.library }}"
+        [ -z "$lib" ] && lib="${{ github.action_path }}/library/mcp"
+
+        target=()
+        if [ -n "${{ inputs.endpoint }}" ]; then target=(--endpoint "${{ inputs.endpoint }}"); fi
+        if [ -n "${{ inputs.stdio }}" ]; then target=(--stdio "${{ inputs.stdio }}"); fi
+        if [ "${#target[@]}" -eq 0 ]; then
+          echo "::error::jakk-scan: provide either 'endpoint' or 'stdio'"; exit 1
+        fi
+
+        fail=()
+        [ "${{ inputs.fail-on-fired }}" = "true" ] && fail=(--exit-nonzero-on-fired)
+
+        safe=()
+        [ "${{ inputs.safe }}" != "false" ] && safe=(--safe)
+
+        # NOTE: 'args' is intentionally word-split so callers can pass multiple flags.
+        jakk mcp scan "${target[@]}" --library "$lib" --jsonl "${{ inputs.jsonl }}" \
+          "${safe[@]}" "${fail[@]}" ${{ inputs.args }}

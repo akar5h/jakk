@@ -111,7 +111,7 @@ LLM into calling the URL-fetching tool with the metadata address.
 | `vulnerable` | The server fetched the metadata URL and returned a credential-shaped body. Real, reportable SSRF-to-cloud-creds. |
 | `pass` | The server refused, blocked the link-local address, or isn't in a cloud / behind that metadata service. |
 | `skipped` | No URL-shaped tool on this server (e.g. github-mcp-server — confirmed). |
-| `error` | The URL-fetching tool needed other required args we didn't supply (the multi-arg context-arg gap — v0.3 #1). |
+| `error` | The call failed at transport/protocol level before a tool result could be evaluated. |
 
 **Severity: critical.** Cloud credential theft → account pivot is among
 the highest-impact outcomes a single tool call can produce.
@@ -137,9 +137,10 @@ the highest-impact outcomes a single tool call can produce.
   *cloud-metadata* variant (in-band, unambiguous evidence). A broader
   callback-based SSRF probe is a possible future addition but needs an
   out-of-band listener.
-- **`error` on multi-arg tools** — if the URL-fetching tool also requires
-  other args (e.g. `fetch(url, method, headers)` with `method` required),
-  the call errors until the context-arg-supply feature (v0.3 #1) lands.
+- **`skipped` on multi-arg tools without context** — if the URL-fetching
+  tool also requires other args (e.g. `fetch(url, method, headers)` with
+  `method` required), jakk tells the operator which `--arg` values to
+  supply before rerunning.
 
 ## 6 · Adapting to other targets
 

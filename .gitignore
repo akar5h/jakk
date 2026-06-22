@@ -30,3 +30,6 @@ examples/external_targets/_vendor/
 *.iml
 .DS_Store
 internal/
+
+# Verification packets (ai-change-verifier output)
+.mlo/

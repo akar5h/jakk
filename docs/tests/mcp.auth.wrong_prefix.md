@@ -1,6 +1,6 @@
 # `mcp.auth.wrong_prefix`
 
-**OWASP:** MCP10 (auth & access) · **severity:** high · **signal:** `auth.scheme_not_enforced`
+**OWASP:** MCP10 (auth & access) · **severity:** low · **signal:** `auth.scheme_not_enforced`
 **side_effect:** safe — one `tools/list` call with malformed Authorization
 
 ## What it is
@@ -24,11 +24,18 @@ correctly formatted. Without `--bearer` there's nothing to mutate;
 the probe emits a `skipped` finding with explanatory evidence.
 
 ## Threat model
-**What "vulnerable" means here:** the server accepted the bearer token *without* the `Bearer ` scheme prefix. Loose string-match auth logic (`if token in header`) rather than proper header parsing per RFC 6750. Other malformed variants (`bearer <token>`, `BEARER <token>`, extra whitespace) usually slip through the same code path.
+**What "vulnerable" means here:** the server accepted a valid bearer token
+*without* the `Bearer ` scheme prefix. This is loose scheme parsing /
+spec-laxity, not proof of authentication bypass.
 
-**Harm:** an attacker who has obtained a token through any channel (logs, accidental disclosure, prior breach) can present it in malformed forms that bypass auth normalization layers. Often a leading indicator that the auth implementation needs review across the board.
+**Harm:** usually low on its own. The token is still validated, so an
+attacker without a valid token gains nothing. The result is useful as a
+leading indicator that auth parsing should be reviewed, especially where
+a proxy/gateway and origin parse `Authorization` differently.
 
-**Harmed parties:** users whose tokens have leaked anywhere (which, given the prevalence of logs containing Authorization headers, is more than people think).
+**Harmed parties:** primarily operators relying on strict gateway/origin
+auth normalization. This finding should be triaged as hardening unless
+paired with a demonstrated parser differential or token-validation flaw.
 
 See [../threat-models.md](../threat-models.md) for the full class.
 

@@ -1,0 +1,58 @@
+# Example: gate your MCP server on jakk findings before merge.
+# Copy this into your own MCP-server repo's .github/workflows/ and adapt the
+# start/wait steps to launch YOUR server.
+#
+# The Action is safe-by-default: it runs only probes annotated side_effect:
+# safe unless you set `safe: "false"`.
+
+name: MCP security smoke test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  jakk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install project dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Start MCP server
+        run: |
+          ./scripts/start-mcp-server.sh &
+          echo $! > /tmp/mcp-server.pid
+
+      - name: Wait for MCP endpoint
+        run: |
+          for i in {1..30}; do
+            curl -fsS http://127.0.0.1:8000/health && exit 0
+            sleep 1
+          done
+          echo "MCP server did not become ready" >&2
+          exit 1
+
+      - name: Run safe jakk scan
+        uses: akar5h/jakk@v0.2
+        with:
+          endpoint: http://127.0.0.1:8000/mcp
+          args: "--bearer ${{ secrets.MCP_TEST_TOKEN }}"
+
+      - name: Upload jakk findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jakk-findings
+          path: jakk-findings.jsonl
+
+      # Stdio variant for local-only servers:
+      #
+      # - name: Run safe jakk stdio scan
+      #   uses: akar5h/jakk@v0.2
+      #   with:
+      #     stdio: "uvx --from . my-mcp-server"

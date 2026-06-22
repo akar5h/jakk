@@ -1,0 +1,43 @@
+id: mcp.sql.error_based
+surface: tool_call
+side_effect: unsafe  # an injected quote could land in a write statement; conservative
+description: |
+  Error-based SQL injection. Many MCP tools front a database — a search,
+  lookup, or filter tool takes a string and builds a query from it. If the
+  arg is concatenated into SQL instead of bound as a parameter, an injected
+  single quote breaks the statement and the engine returns a syntax error.
+
+  This probe injects a marker followed by an unbalanced quote into a
+  query-shaped argument and matches database-engine syntax-error signatures
+  (Postgres / MySQL / SQLite / Oracle / MS SQL). A server using bound
+  parameters treats the quote as data → no error → `pass`. The error text is
+  the signal, so it stays `vulnerable` even when returned as a tool error.
+
+  Scope: targets `query`-kind args (search/term/keyword fields) — the
+  canonical SQLi entry point — and deliberately NOT raw-SQL args (e.g. a tool
+  whose parameter is literally named `sql`), which would error on a quote by
+  design. Triage any hit against the tool's intent; see threat-models.
+
+  Coverage note: this is the MVP SQL probe (error-based, query-kind only).
+  Boolean/UNION-based and id/text-kind variants are future additions.
+owasp: [MCP05]
+atlas: [AML.T0024]
+severity: high
+expected_signal: input.sql_injection
+
+applies_to:
+  # query-kind = search/term/keyword fields (ARG_KINDS registry), where a value
+  # is DATA the server turns into SQL — not a raw-SQL parameter.
+  target_arg_kind: query
+  min_string_args: 1
+
+payload:
+  arguments:
+    __target_arg__: "jakk{run_id}'"
+
+matcher:
+  kind: sql_error
+  # built-in engine signatures already cover pg/mysql/sqlite/oracle/mssql;
+  # add ORM/wrapper-specific error strings here when adapting to a target.
+  params:
+    patterns: []

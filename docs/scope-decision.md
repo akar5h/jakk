@@ -1,20 +1,23 @@
 ---
 date: 2026-05-23
-status: Architecture Decision Record (ADR)
-decision: jakk targets HTTP (streamable-HTTP) production MCP servers.
-          stdio transport is OUT OF SCOPE.
-revisit: only if a stdio target with a multi-tenant threat model appears
-          (currently a contradiction in terms).
+status: Architecture Decision Record (ADR), updated after stdio smoke support
+decision: jakk targets HTTP (streamable-HTTP) as the production MCP threat
+          model. Stdio is supported as a local partial scan mode; auth probes
+          are skipped because stdio has no transport-auth layer.
+revisit: if a stdio target with a multi-tenant threat model appears
+          (currently unusual), or if stdio gains transport-layer auth.
 ---
 
-# ADR — jakk scope: HTTP production MCP servers, stdio out of scope
+# ADR — jakk scope: HTTP production first, stdio partial scans
 
 ## Context
 
-jakk currently speaks only streamable-HTTP. The question arose during
-the GitHub-MCP-target work: is HTTP-only a gap to fill (add stdio), or
-a deliberate scope? This ADR records the decision that **HTTP-only is
-deliberate and correct**, and stdio is out of scope.
+jakk began as a streamable-HTTP scanner because the highest-value MCP
+security bugs live in hosted, shared, authenticated deployments. The
+question arose during the GitHub-MCP-target work: is HTTP-only a gap to
+fill, or a deliberate scope? The current answer is: **HTTP remains the
+production threat model**, while stdio is useful as a local smoke-test
+transport for the subset of probes that applies.
 
 ## The transport landscape (2026)
 
@@ -41,7 +44,8 @@ Linear, Slack, Neon, Vercel) is **entirely streamable-HTTP**.
 
 ## The decision
 
-**jakk targets HTTP production MCP servers. stdio is out of scope.**
+**jakk targets HTTP production MCP servers. Stdio is supported only as a
+partial local scan mode.**
 
 ## Why this is correct, not a limitation
 
@@ -55,7 +59,7 @@ The decisive argument is not "HTTP is more popular." It's that
 | `mcp.auth.wrong_prefix` | an Authorization header scheme to malform | **No** — no headers |
 | `mcp.authz.cross_tenant_read` | multiple tenants to cross | **No** — stdio is single-user by construction |
 
-Four of jakk's eleven probes — the entire auth + authz half of the
+Four of jakk's probes — the entire auth + authz half of the
 library — are **meaningless against a stdio server.** A stdio server
 runs as your own subprocess, authenticated by your own environment,
 serving only you. There are no tenants to cross, no transport auth to
@@ -67,9 +71,9 @@ The interesting MCP bugs — auth bypass, cross-tenant reads, BOLA — live
 That's not a coincidence; it's the threat model. A security scanner
 that targets that threat model is correctly HTTP-only.
 
-Adding stdio would have been scope creep into the *least*
-security-relevant targets, at the cost of the auth/authz probes
-making no sense there.
+That is why `--stdio` skips transport-auth probes as N/A instead of
+pretending they ran. It exists for local input-handling and schema checks,
+not for the multi-tenant auth/authz threat model.
 
 ## What about the input-handling probes?
 
@@ -88,12 +92,12 @@ handling, not transport). But:
 So even the transport-agnostic probes don't justify stdio support on
 their own.
 
-## What changes if a real reason appears
+## What changes if a deeper stdio reason appears
 
-Revisit only if **a stdio target with a genuine multi-tenant threat
-model** emerges — which is close to a contradiction in terms, since
-stdio is single-subprocess-per-client. Concretely, signals that would
-reopen this:
+Revisit the current partial support only if **a stdio target with a
+genuine multi-tenant threat model** emerges — which is close to a
+contradiction in terms, since stdio is single-subprocess-per-client.
+Concretely, signals that would reopen this:
 
 - A widely-deployed stdio MCP server that holds multi-tenant state
   (would be an unusual architecture).
@@ -110,15 +114,16 @@ check for an HTTP mode, not to add stdio to jakk.
 ## Implications
 
 What we DON'T build:
-- stdio transport in `mcp_client.py`
-- subprocess-launching scan orchestration
-- stdio-specific config (command + args instead of URL)
+- transport-auth probes for stdio
+- claims that a stdio scan is equivalent to an HTTP production scan
+- multi-tenant authz framing for local single-user subprocesses
 
 What we DO say, clearly:
-- jakk is "a black-box scanner for **HTTP** MCP servers" — the qualifier
-  is load-bearing and honest, not a hedge.
-- For stdio servers: run them in HTTP mode if they support it; otherwise
-  they're out of jakk's threat model.
+- jakk is "a black-box scanner for MCP servers," with **HTTP** as the
+  production threat model.
+- For stdio servers: `--stdio` can run local input-handling/schema
+  probes; auth probes are skipped as N/A. If a server supports HTTP mode,
+  scan that mode for production/auth coverage.
 - The agent-side attacks against any-transport MCP consumers are
   its agent-side sibling's job, not jakk's.
 

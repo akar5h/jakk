@@ -102,6 +102,7 @@ class Matcher(BaseModel):
         "directive_passthrough",
         "schema_field",
         "cloud_metadata",
+        "sql_error",
     ]
     params: dict[str, Any] = Field(default_factory=dict)
 
@@ -294,9 +295,17 @@ def filter_cases(
     select: Optional[str] = None,
     owasp: Optional[str] = None,
     safe_only: bool = False,
+    exclude_surfaces: Optional[Iterable[str]] = None,
 ) -> list[TestCase]:
     """Filter by ``--select`` (exact id), ``--owasp`` (membership in owasp list),
-    and ``--safe`` (only ``side_effect: safe`` probes)."""
+    ``--safe`` (only ``side_effect: safe`` probes), and ``--exclude-surface``
+    (drop probes whose surface is in the exclusion set).
+
+    ``exclude_surfaces`` is used to suppress probe families that aren't
+    meaningful for a given target — e.g. ``auth`` when scanning a stdio server
+    bridged to HTTP, where the bridge owns the transport and the auth probes
+    would only measure the bridge, not the server.
+    """
     out = list(cases)
     if select:
         out = [c for c in out if c.id == select]
@@ -305,4 +314,7 @@ def filter_cases(
         out = [c for c in out if any(o.upper() == owasp_upper for o in c.owasp)]
     if safe_only:
         out = [c for c in out if c.side_effect == "safe"]
+    if exclude_surfaces:
+        excluded = set(exclude_surfaces)
+        out = [c for c in out if c.surface not in excluded]
     return out

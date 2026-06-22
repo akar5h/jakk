@@ -153,6 +153,20 @@ def test_directive_passthrough_negative():
     assert not r.fired
 
 
+@pytest.mark.parametrize(
+    "haystack",
+    [
+        # Benign `system:` doc/field labels must NOT fire — the lowercase
+        # `system:` FP found scanning memory-shell-mcp (2026-06-12).
+        "Returns:\n    system: the operating system (Linux/Windows/Darwin)\n    platform: full info",
+        "Config options:\n  system: enable the system module\n",
+    ],
+)
+def test_directive_passthrough_lowercase_system_field_no_fp(haystack: str):
+    r = run_matcher("directive_passthrough", {}, haystack, {})
+    assert not r.fired
+
+
 # --- schema_field ---
 
 def test_schema_field_finds_directive_in_tool_description():

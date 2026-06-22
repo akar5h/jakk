@@ -22,7 +22,15 @@ def _build_parser() -> argparse.ArgumentParser:
     mcp_sub = mcp_p.add_subparsers(dest="cmd", required=True)
 
     scan_p = mcp_sub.add_parser("scan", help="Scan an MCP endpoint with a YAML attack library.")
-    scan_p.add_argument("--endpoint", required=True, help="MCP streamable-HTTP endpoint URL.")
+    scan_p.add_argument("--endpoint", help="MCP streamable-HTTP endpoint URL. (Or use --stdio.)")
+    scan_p.add_argument(
+        "--stdio",
+        metavar="COMMAND",
+        help="Scan a stdio MCP server spawned from this command instead of an "
+        "HTTP endpoint, e.g. --stdio 'uvx mcp-server-git'. No bridge needed; auth "
+        "probes are skipped (stdio has no transport-auth layer). Mutually "
+        "exclusive with --endpoint.",
+    )
     scan_p.add_argument(
         "--library",
         required=True,
@@ -68,6 +76,15 @@ def _build_parser() -> argparse.ArgumentParser:
         "parameter. Pass multiple times.",
     )
     scan_p.add_argument(
+        "--canary-path",
+        metavar="PATH",
+        help="Override the path that path-traversal probes target. They default "
+        "to the breach-to-fix lab layout (/app/files/safe_files_sensitive), which "
+        "only exists in the lab. Supply a path you know is sensitive / out-of-scope "
+        "on the real target (e.g. --canary-path /etc/passwd) so the probe exercises "
+        "THAT server instead of a lab-only path.",
+    )
+    scan_p.add_argument(
         "--cred-a",
         metavar="VALUE",
         help="Identity A's credential. Threaded into authz probe payloads as "
@@ -84,6 +101,17 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Object identifier belonging to A's tenant. Threaded into authz "
         "probe payloads as {foreign_id}. B attempts to read this; success = "
         "cross-tenant authz failure.",
+    )
+    scan_p.add_argument(
+        "--exclude-surface",
+        action="append",
+        default=[],
+        metavar="SURFACE",
+        choices=["tool_call", "tool_list", "resource_list", "prompt_list", "auth", "authz"],
+        help="Skip probes on this MCP surface. Pass multiple times. Use "
+        "`--exclude-surface auth` when scanning a stdio server bridged to HTTP, "
+        "where the bridge (not the server) owns the transport, so auth probes "
+        "would only measure the bridge.",
     )
     scan_p.add_argument(
         "--jsonl",
@@ -136,7 +164,8 @@ def main(argv: list[str] | None = None) -> int:
 def _cmd_scan(args: argparse.Namespace) -> int:
     cases = load_library(args.library)
     selected = filter_cases(
-        cases, select=args.select, owasp=args.owasp, safe_only=args.safe
+        cases, select=args.select, owasp=args.owasp, safe_only=args.safe,
+        exclude_surfaces=args.exclude_surface,
     )
     if not selected:
         print(
@@ -144,6 +173,10 @@ def _cmd_scan(args: argparse.Namespace) -> int:
             f"owasp={args.owasp} safe={args.safe})",
             file=sys.stderr,
         )
+        return 1
+
+    if bool(args.endpoint) == bool(args.stdio):
+        print("provide exactly one of --endpoint or --stdio", file=sys.stderr)
         return 1
 
     if args.bearer and args.oauth_token_file:
@@ -160,8 +193,9 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     headers = _parse_headers(args.header)
     context_args = _parse_kv(args.arg, flag="--arg")
 
+    endpoint = args.endpoint or f"stdio:{args.stdio}"
     cfg = ScanConfig(
-        endpoint=args.endpoint,
+        endpoint=endpoint,
         timeout_s=args.timeout,
         bearer=bearer,
         headers=headers or None,
@@ -169,10 +203,12 @@ def _cmd_scan(args: argparse.Namespace) -> int:
         cred_b=args.cred_b,
         foreign_id=args.foreign_id,
         context_args=context_args or None,
+        canary_path=args.canary_path,
+        stdio_command=args.stdio,
     )
     findings = asyncio.run(run_scan(selected, cfg))
 
-    render_console(findings, endpoint=args.endpoint)
+    render_console(findings, endpoint=endpoint)
     if args.jsonl:
         write_jsonl(findings, args.jsonl)
 
