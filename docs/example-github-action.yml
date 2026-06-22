@@ -4,6 +4,10 @@
 #
 # The Action is safe-by-default: it runs only probes annotated side_effect:
 # safe unless you set `safe: "false"`.
+#
+# jakk itself dogfoods this form factor in .github/workflows/action-smoke.yml
+# with `uses: ./`, a stdio MCP fixture, JSONL verification, and a clean-fixture
+# assertion that no finding fired.
 
 name: MCP security smoke test
 

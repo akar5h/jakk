@@ -6,6 +6,7 @@ single-call adversarial probes, and classifies what comes back. No LLM
 in the loop — deterministic, fast, zero token cost.
 
 [![CI](https://github.com/akar5h/jakk/actions/workflows/ci.yml/badge.svg)](https://github.com/akar5h/jakk/actions/workflows/ci.yml)
+[![Action smoke](https://github.com/akar5h/jakk/actions/workflows/action-smoke.yml/badge.svg)](https://github.com/akar5h/jakk/actions/workflows/action-smoke.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Probes](https://img.shields.io/badge/probes-13-orange)
@@ -42,6 +43,17 @@ Tests run: 13  pass=4  skipped=5  vulnerable=4
 `jakk` is safest as a CI smoke test. The Action defaults to `safe: true`,
 so it only runs read-only / no-side-effect probes unless you explicitly
 opt into deeper testing.
+
+This repo dogfoods the Action in
+[`.github/workflows/action-smoke.yml`](.github/workflows/action-smoke.yml):
+CI runs `uses: ./` against a tiny stdio MCP server, verifies JSONL was
+written, and asserts that no finding fired on the clean fixture.
+
+For a known external implementation, run
+[`Real target smoke`](.github/workflows/real-target-smoke.yml) manually.
+It starts GitHub's official `github-mcp-server` Docker image in read-only
+HTTP mode, scans it with the local Action, writes JSONL, and uploads the
+findings artifact.
 
 ```yaml
 name: MCP security smoke test
@@ -182,6 +194,7 @@ cries wolf is worse than none — every `vulnerable` is meant to be real.
 
 - **No LLM.** Matchers are deterministic (regex / canary echo / schema scan). Zero token cost, fully reproducible.
 - **GitHub-native.** The Action is safe-by-default, emits JSONL + SARIF, and can gate PRs with `--exit-nonzero-on-fired`.
+
 - **Schema-aware, vendor-agnostic.** Probes target arguments by *semantic role* (`path`, `url`, `query`...), so one library generalizes across servers regardless of how they name their arguments. ([details](docs/context-args/README.md))
 - **Honest classification.** A 6-outcome taxonomy that separates real findings from input reflection and from "couldn't test."
 - **It eats its own dog food.** `jakk`'s own attack surface is audited — see [`docs/2026-05-23_self-security-audit.md`](docs/2026-05-23_self-security-audit.md).

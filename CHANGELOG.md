@@ -69,6 +69,9 @@ setuptools CVE). See `docs/2026-05-23_self-security-audit.md`.
 ### Verification
 
 - 190 unit tests.
+- GitHub Action smoke test: the composite Action is dogfooded with
+  `uses: ./` against `examples/stdio_smoke_server.py`, verifies JSONL
+  output, and asserts no findings fire on the clean fixture.
 - Live runs against breach-to-fix ch01 / ch02 / ch08 (vulnerable + secure)
   and the official **github-mcp-server** (HTTP read-only mode) — the first
   real production target. Coverage run: `docs/2026-05-23_github-mcp-coverage-run.md`.
