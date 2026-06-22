@@ -63,6 +63,10 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
   jakk:
     runs-on: ubuntu-latest
@@ -88,6 +92,13 @@ jobs:
         with:
           endpoint: http://127.0.0.1:8000/mcp
           args: "--bearer ${{ secrets.MCP_TEST_TOKEN }}"
+          sarif: jakk-findings.sarif
+
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: jakk-findings.sarif
 
       - name: Upload findings
         if: always()
@@ -128,7 +139,8 @@ jakk mcp scan \
   --library library/mcp \
   --bearer "$ACCESS_TOKEN" \
   --safe \
-  --jsonl findings.jsonl
+  --jsonl findings.jsonl \
+  --sarif findings.sarif
 ```
 
 > **jakk's production threat model is HTTP MCP servers.** stdio servers
@@ -181,7 +193,8 @@ cries wolf is worse than none — every `vulnerable` is meant to be real.
 ## How it's different
 
 - **No LLM.** Matchers are deterministic (regex / canary echo / schema scan). Zero token cost, fully reproducible.
-- **GitHub-native.** The Action is safe-by-default, emits JSONL, can gate PRs with `--exit-nonzero-on-fired`, and is dogfooded by the `Action smoke` workflow.
+- **GitHub-native.** The Action is safe-by-default, emits JSONL + SARIF, and can gate PRs with `--exit-nonzero-on-fired`.
+
 - **Schema-aware, vendor-agnostic.** Probes target arguments by *semantic role* (`path`, `url`, `query`...), so one library generalizes across servers regardless of how they name their arguments. ([details](docs/context-args/README.md))
 - **Honest classification.** A 6-outcome taxonomy that separates real findings from input reflection and from "couldn't test."
 - **It eats its own dog food.** `jakk`'s own attack surface is audited — see [`docs/2026-05-23_self-security-audit.md`](docs/2026-05-23_self-security-audit.md).

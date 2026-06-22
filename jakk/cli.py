@@ -6,7 +6,7 @@ import asyncio
 import sys
 from pathlib import Path
 
-from .findings import render_console, write_jsonl
+from .findings import render_console, write_jsonl, write_sarif
 from .library import filter_cases, load_library
 from .scanner import ScanConfig, run_scan
 
@@ -119,6 +119,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Write findings as JSONL to this path (in addition to console output).",
     )
     scan_p.add_argument(
+        "--sarif",
+        type=Path,
+        help="Write fired findings as SARIF 2.1.0 for GitHub code scanning.",
+    )
+    scan_p.add_argument(
         "--timeout",
         type=float,
         default=15.0,
@@ -211,6 +216,8 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     render_console(findings, endpoint=endpoint)
     if args.jsonl:
         write_jsonl(findings, args.jsonl)
+    if args.sarif:
+        write_sarif(findings, args.sarif)
 
     fired_any = any(f.fired for f in findings)
     if args.exit_nonzero_on_fired and fired_any:
