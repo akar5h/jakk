@@ -1,0 +1,67 @@
+name: Real target smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  github-mcp-server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start GitHub MCP server
+        run: |
+          docker run -d --rm \
+            --name jakk-github-mcp \
+            -p 8082:8082 \
+            ghcr.io/github/github-mcp-server \
+            http --read-only --port 8082
+
+      - name: Wait for MCP server container
+        run: |
+          for i in {1..30}; do
+            if docker ps --filter "name=jakk-github-mcp" --filter "status=running" --format '{{.Names}}' | grep -qx jakk-github-mcp; then
+              sleep 2
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs jakk-github-mcp || true
+          exit 1
+
+      - name: Run jakk against GitHub MCP server
+        uses: ./
+        with:
+          endpoint: "http://127.0.0.1:8082/mcp"
+          args: "--bearer ${{ github.token }} --safe"
+          fail-on-fired: "false"
+          jsonl: "jakk-github-mcp-smoke.jsonl"
+
+      - name: Verify real-target smoke output
+        run: |
+          test -s jakk-github-mcp-smoke.jsonl
+          python - <<'PY'
+          import json
+          from collections import Counter
+          from pathlib import Path
+
+          findings = [json.loads(line) for line in Path("jakk-github-mcp-smoke.jsonl").read_text().splitlines()]
+          assert findings, "expected at least one finding row"
+          outcomes = Counter(f["outcome"] for f in findings)
+          print(f"verified {len(findings)} finding rows against github-mcp-server")
+          print("outcomes:", dict(sorted(outcomes.items())))
+          PY
+
+      - name: Upload real-target findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jakk-github-mcp-smoke-findings
+          path: jakk-github-mcp-smoke.jsonl
+
+      - name: Stop GitHub MCP server
+        if: always()
+        run: docker stop jakk-github-mcp || true

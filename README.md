@@ -49,6 +49,12 @@ This repo dogfoods the Action in
 CI runs `uses: ./` against a tiny stdio MCP server, verifies JSONL was
 written, and asserts that no finding fired on the clean fixture.
 
+For a known external implementation, run
+[`Real target smoke`](.github/workflows/real-target-smoke.yml) manually.
+It starts GitHub's official `github-mcp-server` Docker image in read-only
+HTTP mode, scans it with the local Action, writes JSONL, and uploads the
+findings artifact.
+
 ```yaml
 name: MCP security smoke test
 

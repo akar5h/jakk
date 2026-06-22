@@ -49,6 +49,13 @@ That smoke test proves the Action wiring itself works: checkout,
 install, stdio launch, scan execution, JSONL write, and clean-fixture
 gating.
 
+For a known external MCP implementation, `.github/workflows/real-target-smoke.yml`
+runs the same local Action against GitHub's official `github-mcp-server`
+Docker image in read-only HTTP mode. It is manual (`workflow_dispatch`)
+and report-only (`fail-on-fired: false`) because the goal is calibration:
+prove the Action can scan a real server and preserve the JSONL artifact,
+not gate the repository on a third-party server's current behavior.
+
 ## Tests in v0.2
 
 | id | OWASP | severity | side_effect | expected_signal | doc |
