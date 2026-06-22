@@ -2,6 +2,12 @@ name: Real target smoke
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/real-target-smoke.yml"
+      - "action.yml"
+      - "library/mcp/**"
+      - "jakk/**"
 
 permissions:
   contents: read
