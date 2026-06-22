@@ -34,6 +34,28 @@ jakk mcp scan --endpoint http://127.0.0.1:8008/mcp/stream --library library/mcp 
 jakk mcp scan --endpoint http://127.0.0.1:8008/mcp/stream --library library/mcp --owasp MCP05 --jsonl /tmp/jakk-results.jsonl
 ```
 
+## GitHub Action verification
+
+The composite Action is tested in this repo by
+`.github/workflows/action-smoke.yml`. That workflow runs `uses: ./`
+against `examples/stdio_smoke_server.py`, a tiny clean stdio MCP server,
+then verifies:
+
+- `jakk-action-smoke.jsonl` exists and has finding rows.
+- No finding has `fired: true`.
+- The JSONL artifact is uploaded for inspection.
+
+That smoke test proves the Action wiring itself works: checkout,
+install, stdio launch, scan execution, JSONL write, and clean-fixture
+gating.
+
+For a known external MCP implementation, `.github/workflows/real-target-smoke.yml`
+runs the same local Action against GitHub's official `github-mcp-server`
+Docker image in read-only HTTP mode. It is manual (`workflow_dispatch`)
+and report-only (`fail-on-fired: false`) because the goal is calibration:
+prove the Action can scan a real server and preserve the JSONL artifact,
+not gate the repository on a third-party server's current behavior.
+
 ## Tests in v0.2
 
 | id | OWASP | severity | side_effect | expected_signal | doc |
