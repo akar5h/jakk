@@ -84,6 +84,26 @@ workflow scans GitHub's official MCP server Docker image, verifies SARIF
 2.1.0 output, uploads it with `github/codeql-action/upload-sarif@v3`,
 and stores JSONL/SARIF artifacts.
 
+The real-target workflow proves GitHub code-scanning ingestion. A
+separate positive lab run proves non-empty alert content: scanning
+`examples/external_targets/ch01-extended` with the authz probe produced
+`vulnerable=1` and SARIF 2.1.0 with one rule/result
+(`mcp.authz.cross_tenant_read`):
+
+```bash
+jakk mcp scan \
+  --endpoint http://127.0.0.1:18011/mcp/stream \
+  --library library/mcp \
+  --select mcp.authz.cross_tenant_read \
+  --cred-a alpha-api-key \
+  --cred-b bravo-api-key \
+  --foreign-id CRM-1001 \
+  --sarif ch01-extended.sarif
+```
+
+This is the public proof point to cite when distinguishing "SARIF
+uploads" from "SARIF carries actionable findings."
+
 ## Library YAML schema
 
 ```yaml
