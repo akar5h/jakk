@@ -132,7 +132,7 @@ def _build_parser() -> argparse.ArgumentParser:
     scan_p.add_argument(
         "--exit-nonzero-on-fired",
         action="store_true",
-        help="Return exit code 2 if any finding fired (for CI use).",
+        help="Return exit code 2 if any vulnerable finding is found (for CI use).",
     )
     return parser
 
@@ -219,8 +219,8 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     if args.sarif:
         write_sarif(findings, args.sarif)
 
-    fired_any = any(f.fired for f in findings)
-    if args.exit_nonzero_on_fired and fired_any:
+    vulnerable_any = any(f.outcome == "vulnerable" for f in findings)
+    if args.exit_nonzero_on_fired and vulnerable_any:
         return 2
     return 0
 

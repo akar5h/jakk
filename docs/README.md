@@ -207,6 +207,7 @@ finds the path-shaped arg wherever it lives.
 | `--arg KEY=VALUE` | Supply valid values for non-target tool args (e.g. `owner`, `repo`) so multi-arg tools execute instead of erroring. Pass multiple times. See [context-args/README.md](context-args/README.md). |
 | `--canary-path PATH` | Override the default lab path used by path-traversal probes with a path meaningful on the target. |
 | `--sarif PATH` | Write fired findings as SARIF 2.1.0 for GitHub code scanning. JSONL remains the complete scan transcript. |
+| `--exit-nonzero-on-fired` | Return exit code 2 when at least one `vulnerable` finding is found. `echo` and `suggestive` outcomes remain report-only by default. |
 | `--cred-a VALUE` | Identity A's credential for authz probes. Template: `{cred_a}`. |
 | `--cred-b VALUE` | Identity B's credential for authz probes. Template: `{cred_b}`. |
 | `--foreign-id VALUE` | Object ID owned by A's tenant. Template: `{foreign_id}`. |
