@@ -207,7 +207,7 @@ cries wolf is worse than none — every `vulnerable` is meant to be real.
 ## How it's different
 
 - **No LLM.** Matchers are deterministic (regex / canary echo / schema scan). Zero token cost, fully reproducible.
-- **GitHub-native.** The Action is safe-by-default, emits JSONL + SARIF, and can gate PRs with `--exit-nonzero-on-fired`.
+- **GitHub-native.** The Action is safe-by-default, emits JSONL + SARIF, and can gate PRs on `vulnerable` findings with `--exit-nonzero-on-fired`.
 
 - **Schema-aware, vendor-agnostic.** Probes target arguments by *semantic role* (`path`, `url`, `query`...), so one library generalizes across servers regardless of how they name their arguments. ([details](docs/context-args/README.md))
 - **Honest classification.** A 6-outcome taxonomy that separates real findings from input reflection and from "couldn't test."

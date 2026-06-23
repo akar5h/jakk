@@ -23,7 +23,9 @@ self-security audit.
 ### Capabilities
 
 - **GitHub Action**: safe-by-default Marketplace form factor for PR
-  checks. Emits JSONL/SARIF and can fail CI with `--exit-nonzero-on-fired`.
+  checks. Emits JSONL/SARIF and can fail CI on `vulnerable` findings
+  with `--exit-nonzero-on-fired`; `echo` and `suggestive` remain
+  report-only by default.
 - **Auth** for commercial targets: `--bearer`, `--oauth-token-file`,
   `--header KEY=VALUE`.
 - **`--safe`** + `side_effect: safe|unsafe` classification — run only

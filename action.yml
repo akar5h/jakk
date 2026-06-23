@@ -27,7 +27,7 @@ inputs:
     required: false
     default: "true"
   fail-on-fired:
-    description: "Fail the job if any probe fires (vulnerable/echo). Set 'false' to report-only."
+    description: "Fail the job if any vulnerable finding is found. Echo/suggestive outcomes are reported but do not block by default. Set 'false' to report-only."
     required: false
     default: "true"
   jsonl:
