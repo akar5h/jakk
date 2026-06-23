@@ -53,3 +53,10 @@ def test_exit_nonzero_on_fired_does_not_block_echo(monkeypatch, tmp_path):
     _patch_scan(monkeypatch, [_finding("echo")])
 
     assert cli.main(_argv(tmp_path)) == 0
+
+
+def test_default_library_points_to_bundled_probe_library():
+    lib = cli._default_library_path()
+
+    assert lib.name == "mcp"
+    assert (lib / "mcp.auth.no_credential.yaml").exists()

@@ -11,6 +11,10 @@ from .library import filter_cases, load_library
 from .scanner import ScanConfig, run_scan
 
 
+def _default_library_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "library" / "mcp"
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="jakk",
@@ -33,9 +37,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     scan_p.add_argument(
         "--library",
-        required=True,
         type=Path,
-        help="Path to a directory of jakk YAML test files.",
+        default=_default_library_path(),
+        help="Path to a directory of jakk YAML test files. Defaults to the bundled MCP probe library.",
     )
     scan_p.add_argument("--select", help="Run only the test with this id.")
     scan_p.add_argument("--owasp", help="Filter tests by OWASP code (e.g. MCP05).")
