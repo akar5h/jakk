@@ -58,6 +58,17 @@ artifact.
 
 That workflow is the real-target SARIF ingestion smoke test.
 
+Public proof points:
+
+- **GitHub-native ingestion:** PR #4 ran `Real target smoke` against
+  GitHub's official `github-mcp-server`; `upload-sarif` validated the
+  SARIF, uploaded it, and GitHub reported processing complete.
+- **Non-empty SARIF on a vulnerable target:** a local run against
+  `examples/external_targets/ch01-extended` fired
+  `mcp.authz.cross_tenant_read` as `critical`, producing SARIF 2.1.0
+  with `1` rule and `1` result. That proves the same output path carries
+  actionable findings, not just empty scan metadata.
+
 ```yaml
 name: MCP security smoke test
 
@@ -217,6 +228,27 @@ docker compose -f examples/external_targets/_vendor/mcp-breach-to-fix-labs/docke
 jakk mcp scan --endpoint http://127.0.0.1:8008/mcp/stream --library library/mcp  # fires
 jakk mcp scan --endpoint http://127.0.0.1:9008/mcp/stream --library library/mcp  # clean
 ```
+
+For a compact positive SARIF proof, run the local ch01 authz lab:
+
+```bash
+CHALLENGE_HOST=127.0.0.1 CHALLENGE_PORT=18011 \
+  CH01_EXT_DATA_PATH=/path/to/projects.json \
+  python examples/external_targets/ch01-extended/server.py
+
+jakk mcp scan \
+  --endpoint http://127.0.0.1:18011/mcp/stream \
+  --library library/mcp \
+  --select mcp.authz.cross_tenant_read \
+  --cred-a alpha-api-key \
+  --cred-b bravo-api-key \
+  --foreign-id CRM-1001 \
+  --jsonl ch01-extended.jsonl \
+  --sarif ch01-extended.sarif
+```
+
+Expected data point: `vulnerable=1`, SARIF `results.length == 1`, rule
+`mcp.authz.cross_tenant_read`.
 
 See [`examples/external_targets/`](examples/external_targets/) for the
 target registry, and [`docs/2026-05-22_smoke-report.md`](docs/2026-05-22_smoke-report.md)

@@ -50,6 +50,31 @@ Same as upstream ch01:
 | `alpha-api-key` | `tenant_alpha` (owns CRM-1001) |
 | `bravo-api-key` | `tenant_bravo` (owns CRM-2001) |
 
+## Positive SARIF smoke
+
+This lab is the smallest public proof that jakk emits actionable SARIF,
+not just an empty SARIF envelope. Use `bravo-api-key` to read
+`CRM-1001`, an Alpha-owned object:
+
+```bash
+jakk mcp scan \
+  --endpoint http://127.0.0.1:18011/mcp/stream \
+  --library library/mcp \
+  --select mcp.authz.cross_tenant_read \
+  --cred-a alpha-api-key \
+  --cred-b bravo-api-key \
+  --foreign-id CRM-1001 \
+  --jsonl ch01-extended.jsonl \
+  --sarif ch01-extended.sarif
+```
+
+Expected result:
+
+```text
+Tests run: 1  vulnerable=1
+SARIF: version 2.1.0, rule mcp.authz.cross_tenant_read, results=1
+```
+
 ## Status
 
 This is a deliberate vulnerability lab. It is intentionally insecure.
