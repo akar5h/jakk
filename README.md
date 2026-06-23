@@ -136,7 +136,7 @@ full library:
 ## Install
 
 ```bash
-pip install jakk        # once published to PyPI
+pip install jakk
 # or, from source:
 git clone https://github.com/akar5h/jakk && cd jakk && pip install -e .
 ```
@@ -145,12 +145,11 @@ git clone https://github.com/akar5h/jakk && cd jakk && pip install -e .
 
 ```bash
 # Scan a local MCP endpoint with read-only probes
-jakk mcp scan --endpoint http://127.0.0.1:8008/mcp/stream --library library/mcp --safe
+jakk mcp scan --endpoint http://127.0.0.1:8008/mcp/stream --safe
 
 # An authenticated server, safe (read-only) probes only, results to JSONL
 jakk mcp scan \
   --endpoint https://api.example.com/mcp/stream \
-  --library library/mcp \
   --bearer "$ACCESS_TOKEN" \
   --safe \
   --jsonl findings.jsonl \

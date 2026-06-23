@@ -200,6 +200,7 @@ finds the path-shaped arg wherever it lives.
 
 | Flag | Purpose |
 |---|---|
+| `--library PATH` | Use a custom probe-library directory. Defaults to jakk's bundled MCP probe library. |
 | `--safe` | Filter to `side_effect: safe` probes only. |
 | `--bearer TOKEN` | Send `Authorization: Bearer <token>` on every request. |
 | `--oauth-token-file PATH` | Read bearer from file (CI secrets). Mutually exclusive with `--bearer`. |
