@@ -1,5 +1,5 @@
 name: "jakk MCP security scan"
-description: "Deterministic black-box security scan of an MCP server. No LLM. Gates CI on findings."
+description: "Deterministic black-box security scan of an MCP server. No LLM. Gates CI on vulnerable findings."
 author: "akar5h"
 branding:
   icon: "shield"
